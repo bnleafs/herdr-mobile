@@ -98,7 +98,7 @@ jobs:
       - name: Build APKs
         if: steps.sign.outputs.enabled == 'true'
         working-directory: app
-        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-debug-info=build/symbols
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-debug-info=build/symbols --dart-define=APP_REPOSITORY=${{ github.repository }} --android-project-arg=appIdSuffix=.jaya
 
       - name: Verify signature is not the debug key
         if: steps.sign.outputs.enabled == 'true'

@@ -5,7 +5,8 @@
 const appVersion = '0.1.52';
 
 /// Where the source and releases live, as `owner/name`.
-const appRepository = 'tuan3w/herdr-mobile';
+// Forks set it at build time: --dart-define=APP_REPOSITORY=owner/name.
+const appRepository = String.fromEnvironment('APP_REPOSITORY', defaultValue: 'tuan3w/herdr-mobile');
 
 /// The repository's page.
 const appRepositoryUrl = 'https://github.com/$appRepository';

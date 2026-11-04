@@ -10,6 +10,7 @@ stack small: every line changed in an upstream file is a line that can conflict.
 | F2 | `.github/workflows/release.yml` | The APK build passes `APP_REPOSITORY=${{ github.repository }}` and `appIdSuffix=.jaya`, so the fork app installs beside the stock app and updates from this repo. | Fork only. | Never, unless upstream reads both from repository variables. |
 | F3 | `app/android/app/src/main/AndroidManifest.xml` | Launcher label `herdr j` (placeholder) tells the two apps apart. | Fork only. | Never. |
 | F4 | `fork/` (new files only) | This file, `sync.sh` and `test-sync.sh`. | Fork only. | Never. |
+| F5 | `.github/workflows/fork-sync.yml` (new file) | Runs `fork/sync.sh --push --test` every 2 hours, so the fork follows upstream's newest release with nobody running anything. Needs the repo secret `SYNC_TOKEN` (fine-grained PAT, Contents and Workflows read/write): the built-in token cannot push workflow files, and a tag it pushes does not start `release.yml`. A conflict rerere cannot resolve opens (or comments on) the issue "Upstream sync conflict". | Fork only. | Never. |
 
 ## Rules
 
@@ -42,8 +43,16 @@ stack small: every line changed in an upstream file is a line that can conflict.
   git switch -c scratch jaya
   git rebase refs/upstream-tags/vX.Y.Z   # fix files, git add, git rebase --continue
   git switch jaya && git branch -D scratch
-  fork/sync.sh --push                    # rerere replays the recorded resolution
+  fork/sync.sh --push                    # replays the resolution, then publishes it
   ```
 
-  The resolutions live in `.git/rr-cache` of the clone that recorded them.
+  Run that last step from the clone that recorded the resolution. The sync
+  keeps the recorded resolutions (`.git/rr-cache`) on the orphan branch
+  `rr-cache` of the fork remote: it restores them before every rebase and, with
+  `--push`, publishes new ones (a plain fast-forward push; a rejected push only
+  warns, and the next `--push` run retries). That is how the scheduled workflow
+  replays a resolution made on the Mac. Without `--push` the branch is never
+  written. `fork-sync.yml` runs every 2 hours and on demand; GitHub pauses
+  scheduled workflows after 60 days without repository activity, so re-enable
+  it from the Actions tab if the fork has been quiet that long.
 - `bash fork/test-sync.sh` checks the sync against throwaway repos.

@@ -6,7 +6,9 @@
 #
 # Defaults come from UPSTREAM (upstream), BRANCH (jaya) and FORK (jaya).
 # --test runs `flutter test` in app/ with the binary at $FLUTTER. The rebase
-# checks the fork branch out; it needs a clean tree.
+# checks the fork branch out; it needs a clean tree. Recorded conflict
+# resolutions are restored from the fork's rr-cache branch first and, with
+# --push, new ones are published to it.
 # Exit codes: 0 synced or already up to date, 1 refused or failed (nothing
 # changed), 2 a conflict rerere could not resolve (rebase aborted).
 set -euo pipefail
@@ -42,8 +44,44 @@ tag=$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$tags" | sed -n 1p) || true
 [ -n "$tag" ] || die "no vX.Y.Z tag on $UPSTREAM"
 base="refs/upstream-tags/$tag"
 
+# rerere's recorded resolutions travel on the fork remote's orphan branch
+# rr-cache, so CI replays a conflict resolved by hand on any clone. The glob
+# matches nothing (exit 0) until the branch exists.
+rr=$(git rev-parse --path-format=absolute --git-path rr-cache)
+rr_ref=refs/fork/rr-cache
+mkdir -p "$rr"
+git fetch --quiet "$FORK" '+refs/heads/rr-cache*:refs/fork/rr-cache*' ||
+  echo "sync: could not fetch rr-cache from $FORK; going on without shared resolutions" >&2
+if git rev-parse --verify --quiet "$rr_ref^{commit}" >/dev/null; then
+  git archive "$rr_ref" | tar -xmf - -C "$rr" || die "could not restore $rr_ref into $rr"
+fi
+
+# Commits the recorded resolutions (directories with a postimage) the branch
+# lacks and pushes them, never forced: a rejected push (another clone published
+# first) is retried by the next --push run, after restoring theirs.
+publish_rr() {
+  local d dirs=() parent tree commit idx="$rr.index"
+  for d in "$rr"/*/postimage*; do [ -e "$d" ] && dirs+=("$(basename "$(dirname "$d")")"); done
+  [ ${#dirs[@]} -gt 0 ] || return 0
+  parent=$(git rev-parse --verify --quiet "$rr_ref^{commit}") || parent=
+  rm -f "$idx"
+  [ -z "$parent" ] || GIT_INDEX_FILE=$idx git read-tree "$parent"
+  GIT_INDEX_FILE=$idx git -C "$rr" --git-dir="$(git rev-parse --absolute-git-dir)" --work-tree=. add -f -- "${dirs[@]}"
+  tree=$(GIT_INDEX_FILE=$idx git write-tree)
+  rm -f "$idx"
+  [ -n "$parent" ] && [ "$tree" = "$(git rev-parse "$parent^{tree}")" ] && return 0
+  commit=$(git commit-tree "$tree" ${parent:+-p "$parent"} -m "rr-cache: record conflict resolutions")
+  if git push --quiet "$FORK" "$commit:refs/heads/rr-cache"; then
+    git update-ref "$rr_ref" "$commit"
+    echo "published conflict resolutions to $FORK rr-cache"
+  else
+    echo "sync: could not push rr-cache to $FORK; the next --push run retries" >&2
+  fi
+}
+
 if git merge-base --is-ancestor "$base" "$old"; then
   echo "up to date at $tag"
+  if [ "$PUSH" = 1 ]; then publish_rr; fi
   exit 0
 fi
 
@@ -92,3 +130,4 @@ if [ "$PUSH" = 1 ]; then
   pushed="pushed to $FORK"
 fi
 echo "synced $BRANCH onto $tag: $patches patches, tag $tag at ${head:0:7}, $pushed"
+if [ "$PUSH" = 1 ]; then publish_rr; fi

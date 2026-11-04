@@ -94,4 +94,25 @@ head=$(fk rev-parse jaya)
 [ -z "$(fk status --porcelain)" ] || fail "tree not clean"
 check
 
+begin "a resolution published with --push is replayed by a fresh clone on the next tag"
+# The clone above recorded the v0.1.3 resolution but never pushed jaya, so the
+# remote branch still predates the conflict.
+git -C "$tmp/remote.git" rev-parse -q --verify rr-cache >/dev/null && fail "rr-cache written without --push"
+run_sync --push
+[ "$code" = 0 ] && [ "$(tail -1 <<<"$out")" = "published conflict resolutions to jaya rr-cache" ] || fail "publish: exit $code: $out"
+rrc=$(git -C "$tmp/remote.git" rev-parse -q --verify rr-cache) || fail "no rr-cache branch"
+git -C "$tmp/remote.git" merge-base rr-cache jaya >/dev/null && fail "rr-cache shares history with jaya"
+upcommit c.txt "unrelated" "release 5"
+up tag v0.1.11
+git clone -q -b jaya "$tmp/remote.git" "$tmp/b"
+git -C "$tmp/b" remote add upstream "$tmp/up"
+[ ! -e "$tmp/b/.git/rr-cache" ] || fail "fresh clone already has an rr-cache"
+out=$(cd "$tmp/b" && bash "$SYNC" --fork origin --push 2>&1); code=$?
+head=$(git -C "$tmp/b" rev-parse jaya)
+[ "$code" = 0 ] && [ "$out" = "synced jaya onto v0.1.11: 2 patches, tag v0.1.11 at ${head:0:7}, pushed to origin" ] ||
+  fail "clone B: exit $code: $out"
+[ "$(git -C "$tmp/b" show jaya:a.txt | tr '\n' ' ')" = "title name=herdr up j x y version=3 " ] || fail "not replayed in B"
+[ "$(git -C "$tmp/remote.git" rev-parse rr-cache)" = "$rrc" ] || fail "rr-cache rewritten with nothing new"
+check
+
 if [ "$failed" = 0 ]; then echo "$passed passed"; else echo "$passed passed, $failed failed"; exit 1; fi

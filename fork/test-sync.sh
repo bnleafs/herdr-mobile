@@ -45,7 +45,7 @@ begin "a new tag rebases cleanly and both patches survive"
 run_sync --push
 [ "$code" = 0 ] || fail "exit $code: $out"
 head=$(fk rev-parse jaya)
-[ "$out" = "synced jaya onto v0.1.2: 2 patches, tag v0.1.2 at ${head:0:7}, pushed to jaya" ] || fail "output: $out"
+[ "$(sed -n 1p <<<"$out")" = "synced jaya onto v0.1.2: 2 patches, tag v0.1.2 at ${head:0:7}" ] || fail "output: $out"
 [ "$(fk log --format=%s refs/upstream-tags/v0.1.2..jaya | tr '\n' ' ')" = "patch2 patch1 " ] || fail "patches on top of v0.1.2"
 fk merge-base --is-ancestor refs/upstream-tags/v0.1.2 jaya || fail "v0.1.2 not in jaya"
 [ "$(fk show jaya:a.txt | tr '\n' ' ')" = "title name=herdr j x y version=2 " ] || fail "a.txt merged wrong"
@@ -87,7 +87,7 @@ upcommit b.txt "unrelated" "release 4"
 up tag v0.1.10 # v0.1.10 sorts above v0.1.3 only by version
 run_sync
 head=$(fk rev-parse jaya)
-[ "$code" = 0 ] && [ "$out" = "synced jaya onto v0.1.10: 2 patches, tag v0.1.10 at ${head:0:7}, not pushed" ] ||
+[ "$code" = 0 ] && [ "$out" = "synced jaya onto v0.1.10: 2 patches, tag v0.1.10 at ${head:0:7}" ] ||
   fail "exit $code: $out"
 [ "$(fk show jaya:a.txt | tr '\n' ' ')" = "title name=herdr up j x y version=3 " ] || fail "resolution not replayed"
 [ "$(fk log --format=%s refs/upstream-tags/v0.1.10..jaya | tr '\n' ' ')" = "patch2 patch1 " ] || fail "patches"
@@ -95,9 +95,11 @@ head=$(fk rev-parse jaya)
 check
 
 begin "a resolution published with --push is replayed by a fresh clone on the next tag"
-# The clone above recorded the v0.1.3 resolution but never pushed jaya, so the
-# remote branch still predates the conflict.
+# The clone above recorded the v0.1.3 resolution but never pushed jaya. --push
+# publishes it now; clone B below starts from the branch as it was before the
+# conflict, so its rebase meets the conflict again.
 git -C "$tmp/remote.git" rev-parse -q --verify rr-cache >/dev/null && fail "rr-cache written without --push"
+before_conflict=$(git -C "$tmp/remote.git" rev-parse jaya)
 run_sync --push
 [ "$code" = 0 ] && [ "$(tail -1 <<<"$out")" = "published conflict resolutions to jaya rr-cache" ] || fail "publish: exit $code: $out"
 rrc=$(git -C "$tmp/remote.git" rev-parse -q --verify rr-cache) || fail "no rr-cache branch"
@@ -106,13 +108,108 @@ upcommit c.txt "unrelated" "release 5"
 up tag v0.1.11
 git clone -q -b jaya "$tmp/remote.git" "$tmp/b"
 git -C "$tmp/b" remote add upstream "$tmp/up"
+git -C "$tmp/b" reset -q --hard "$before_conflict"
+[ "$(git -C "$tmp/b" show jaya:a.txt | sed -n 2p)" = "name=herdr j" ] || fail "clone B does not start before the conflict"
 [ ! -e "$tmp/b/.git/rr-cache" ] || fail "fresh clone already has an rr-cache"
 out=$(cd "$tmp/b" && bash "$SYNC" --fork origin --push 2>&1); code=$?
 head=$(git -C "$tmp/b" rev-parse jaya)
-[ "$code" = 0 ] && [ "$out" = "synced jaya onto v0.1.11: 2 patches, tag v0.1.11 at ${head:0:7}, pushed to origin" ] ||
+[ "$code" = 0 ] && [ "$(sed -n 1p <<<"$out")" = "synced jaya onto v0.1.11: 2 patches, tag v0.1.11 at ${head:0:7}" ] ||
   fail "clone B: exit $code: $out"
+[ "$(git -C "$tmp/remote.git" rev-parse jaya)" = "$head" ] || fail "clone B did not push jaya"
 [ "$(git -C "$tmp/b" show jaya:a.txt | tr '\n' ' ')" = "title name=herdr up j x y version=3 " ] || fail "not replayed in B"
 [ "$(git -C "$tmp/remote.git" rev-parse rr-cache)" = "$rrc" ] || fail "rr-cache rewritten with nothing new"
+check
+
+# Clone C plays CI: a sync run without --push, then --publish (fork/sync.sh
+# --fork origin --publish) in a later step of the same job.
+cs() { out=$(cd "$tmp/c" && bash "$SYNC" --fork origin "$@" 2>&1); code=$?; }
+rem() { git -C "$tmp/remote.git" "$@"; }
+
+begin "--publish pushes the branch and the tag a sync run left unpushed"
+upcommit d.txt "unrelated" "release 6"
+up tag v0.1.12
+git clone -q -b jaya "$tmp/remote.git" "$tmp/c"
+git -C "$tmp/c" remote add upstream "$tmp/up"
+cs
+head=$(git -C "$tmp/c" rev-parse jaya)
+[ "$code" = 0 ] && [ "$out" = "synced jaya onto v0.1.12: 2 patches, tag v0.1.12 at ${head:0:7}" ] || fail "sync: exit $code: $out"
+[ "$(rem rev-parse jaya)" != "$head" ] || fail "a sync without --push pushed jaya"
+git -C "$tmp/c" tag v0.1.9 jaya # a second plain tag on the head: only the highest goes out
+cs --publish
+[ "$code" = 0 ] || fail "publish: exit $code: $out"
+[ "$(rem rev-parse jaya 'v0.1.12^{commit}' | tr '\n' ' ')" = "$head $head " ] || fail "jaya or v0.1.12 not pushed: $out"
+rem rev-parse -q --verify refs/tags/v0.1.9 >/dev/null && fail "pushed the lower tag v0.1.9 too"
+[ "$out" = "pushed jaya at ${head:0:7} to origin
+tag v0.1.12 at ${head:0:7} is on origin" ] || fail "output: $out"
+check
+
+begin "--publish with nothing new changes nothing, with or without a tag at the head"
+git -C "$tmp/c" tag -d v0.1.9 >/dev/null
+before=$(rem for-each-ref)
+cs --publish
+[ "$code" = 0 ] || fail "exit $code: $out"
+[ "$(rem for-each-ref)" = "$before" ] || fail "remote refs changed"
+grep -q '^pushed' <<<"$out" && fail "pushed something: $out"
+printf 'p3\n' >"$tmp/c/p3.txt"
+git -C "$tmp/c" add p3.txt
+git -C "$tmp/c" commit -qm "patch3"
+git -C "$tmp/c" push -q origin jaya # by hand: the head has no tag, the remote has it
+before=$(rem for-each-ref)
+cs --publish
+[ "$code" = 0 ] || fail "untagged head: exit $code: $out"
+[ "$(rem for-each-ref)" = "$before" ] || fail "untagged head: remote refs changed"
+[ "$out" = "jaya at $(git -C "$tmp/c" rev-parse --short=7 jaya) is already on origin" ] || fail "untagged head: $out"
+check
+
+begin "--publish refuses when the remote branch moved after the checkout"
+# It moves before the sync, which fetches rr-cache from the same remote: that
+# fetch must not refresh the lease.
+head_before_sync=$(git -C "$tmp/c" rev-parse refs/remotes/origin/jaya)
+git clone -q -b jaya "$tmp/remote.git" "$tmp/d"
+git -C "$tmp/d" commit -q --allow-empty -m "pushed from elsewhere"
+git -C "$tmp/d" push -q origin jaya
+moved=$(rem rev-parse jaya)
+upcommit e.txt "unrelated" "release 7"
+up tag v0.1.13
+cs
+[ "$code" = 0 ] || fail "sync: exit $code: $out"
+cs --publish
+[ "$code" = 1 ] && [ "$(tail -1 <<<"$out")" = "sync: origin refused jaya: the lease expected $head_before_sync; fetch origin and look before running again" ] ||
+  fail "exit $code: $out"
+[ "$(rem rev-parse jaya)" = "$moved" ] || fail "overwrote the moved branch"
+rem rev-parse -q --verify refs/tags/v0.1.13 >/dev/null && fail "pushed the tag after the lease refused"
+check
+
+begin "--publish without a remote-tracking ref only creates the branch"
+git init -q --bare "$tmp/empty.git"
+git -C "$tmp/c" remote add empty "$tmp/empty.git"
+out=$(cd "$tmp/c" && bash "$SYNC" --fork empty --publish 2>&1); code=$?
+[ "$code" = 0 ] || fail "empty remote: exit $code: $out"
+[ "$(git -C "$tmp/empty.git" rev-parse jaya)" = "$(git -C "$tmp/c" rev-parse jaya)" ] || fail "branch not created"
+git clone -q --bare "$tmp/remote.git" "$tmp/full.git"
+git -C "$tmp/c" remote add full "$tmp/full.git" # never fetched
+out=$(cd "$tmp/c" && bash "$SYNC" --fork full --publish 2>&1); code=$?
+[ "$code" = 1 ] && [ "$(tail -1 <<<"$out")" = "sync: full refused jaya: the lease expected no branch there; fetch full and look before running again" ] ||
+  fail "unfetched remote: exit $code: $out"
+[ "$(git -C "$tmp/full.git" rev-parse jaya)" = "$moved" ] || fail "overwrote a branch it never fetched"
+check
+
+begin "--test runs tool/check.sh --tests without timing tests, and a failure resets the branch"
+mkdir -p "$tmp/up/tool" "$tmp/sdk/bin"
+# shellcheck disable=SC2016 # expanded by the fake check.sh, not here
+printf '#!/bin/sh\necho "$* ${HERDR_TEST_ONLY:-} ${HERDR_FLUTTER_BIN:-}" >"%s"\nexit 1\n' "$tmp/check.log" >"$tmp/up/tool/check.sh"
+chmod +x "$tmp/up/tool/check.sh"
+up add -A
+up commit -qm "release 8 adds the test entry"
+up tag v0.1.14
+printf '#!/bin/sh\n' >"$tmp/sdk/bin/flutter"
+chmod +x "$tmp/sdk/bin/flutter"
+old=$(git -C "$tmp/c" rev-parse jaya)
+out=$(cd "$tmp/c" && FLUTTER="$tmp/sdk/bin/flutter" bash "$SYNC" --fork origin --test 2>&1); code=$?
+[ "$code" = 1 ] || fail "exit $code: $out"
+[ "$(cat "$tmp/check.log" 2>/dev/null)" = "--tests rest $(cd "$tmp/sdk/bin" && pwd -P)" ] || fail "check.sh ran as: $(cat "$tmp/check.log" 2>/dev/null)"
+[ "$(git -C "$tmp/c" rev-parse jaya)" = "$old" ] || fail "branch not reset"
+git -C "$tmp/c" rev-parse -q --verify refs/tags/v0.1.14 >/dev/null && fail "tagged despite failing tests"
 check
 
 if [ "$failed" = 0 ]; then echo "$passed passed"; else echo "$passed passed, $failed failed"; exit 1; fi

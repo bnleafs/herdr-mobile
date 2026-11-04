@@ -1,21 +1,24 @@
 name: Fork sync
 
-# Keeps the default branch (jaya) on upstream's newest release: runs
-# fork/sync.sh, which rebases the fork patches onto the newest upstream vX.Y.Z,
-# tests, force-pushes the branch and pushes the tag (that tag push runs
-# release.yml). See fork/PATCHES.md.
+# Keeps the default branch (jaya) on upstream's newest release, in two phases.
+# "Sync and test" runs fork/sync.sh --test: it rebases the fork patches onto
+# the newest upstream vX.Y.Z, runs upstream's tests and tags the result, with
+# no credential anywhere in the job. "Publish" then loads a deploy key and runs
+# fork/sync.sh --publish, which pushes the branch, the tag (that tag push runs
+# release.yml) and new conflict resolutions. See fork/PATCHES.md.
 #
-# Needs the repository secret SYNC_TOKEN: a fine-grained PAT with Contents and
-# Workflows read/write on this repo. The built-in GITHUB_TOKEN cannot push
-# changes to workflow files, and a tag it pushes does not trigger release.yml.
-# The PAT is only handed to actions/checkout, which stores it for git.
+# Needs the repository secret SYNC_DEPLOY_KEY: the private half of a deploy key
+# with write access to this repo. A tag pushed with the built-in GITHUB_TOKEN
+# would not start release.yml. The key lives only in the Publish step, after
+# the last line of upstream code (pub get, the tests) has run.
 
 on:
   schedule:
     - cron: '23 */2 * * *'
   workflow_dispatch:
 
-# The built-in token only reads code and files the conflict issue.
+# The built-in token only reads, and files the conflict issue; every push goes
+# through the deploy key.
 permissions:
   contents: read
   issues: write
@@ -35,7 +38,9 @@ jobs:
         with:
           ref: jaya
           fetch-depth: 0
-          token: ${{ secrets.SYNC_TOKEN }}
+          # The repo is public: no later step needs a token, and the next ones
+          # run upstream code.
+          persist-credentials: false
 
       - name: Git identity and upstream remote
         run: |
@@ -50,24 +55,23 @@ jobs:
           # Caches the SDK and the pub cache (keyed on pubspec.lock).
           cache: true
 
-      # Exit 0 (synced or up to date) passes, 2 (conflict rerere could not
-      # resolve) is reported by the next step, anything else fails the job.
-      - name: Sync
+      # No credential exists here: this step runs upstream code. Exit 0 (synced
+      # or up to date) goes on to Publish; 2 (a conflict rerere could not
+      # resolve) fails the job after the next step files the issue; anything
+      # else just fails it.
+      - name: Sync and test
         id: sync
-        env:
-          FLUTTER: flutter
         run: |
           set +e
-          fork/sync.sh --fork origin --push --test 2>&1 | tee "$RUNNER_TEMP/sync.log"
+          fork/sync.sh --fork origin --test 2>&1 | tee "$RUNNER_TEMP/sync.log"
           code=${PIPESTATUS[0]}
           if [ "$code" = 2 ]; then
             echo "conflict=true" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
           exit "$code"
 
       - name: Report the conflict
-        if: steps.sync.outputs.conflict == 'true'
+        if: failure() && steps.sync.outputs.conflict == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -94,3 +98,21 @@ jobs:
           else
             gh issue comment "$n" --body-file "$RUNNER_TEMP/issue.md"
           fi
+
+      # The only step that holds the key. It trusts GitHub's published SSH host
+      # keys and nothing learned on first use, and kills the agent on exit.
+      - name: Publish
+        env:
+          SYNC_DEPLOY_KEY: ${{ secrets.SYNC_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          # Also overrides any core.sshCommand left in .git/config.
+          GIT_SSH_COMMAND: ssh -o StrictHostKeyChecking=yes
+        run: |
+          install -d -m 700 ~/.ssh
+          gh api meta --jq '.ssh_keys[] | "github.com " + .' > ~/.ssh/known_hosts
+          [ -s ~/.ssh/known_hosts ]
+          eval "$(ssh-agent -s)" >/dev/null
+          trap 'ssh-agent -k >/dev/null' EXIT
+          ssh-add -q - <<<"$SYNC_DEPLOY_KEY"
+          git remote set-url --push origin "git@github.com:$GITHUB_REPOSITORY.git"
+          fork/sync.sh --fork origin --publish

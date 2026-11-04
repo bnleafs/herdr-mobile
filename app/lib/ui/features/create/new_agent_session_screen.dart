@@ -6,13 +6,13 @@ import 'package:provider/provider.dart';
 
 import '../../../data/acp/agent_host.dart';
 import '../../../data/models/worktrees.dart';
-import '../../../data/repositories/agent_screens.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/agent_session_settings.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/place_name.dart';
+import '../../../fork/desk_native_sessions.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -51,7 +51,7 @@ class NewAgentSessionScreen extends StatelessWidget {
   Widget build(BuildContext context) => ChangeNotifierProvider(
     create: (ctx) => NewAgentSessionViewModel(
       fleet: ctx.read<FleetRepository>(),
-      sessions: ctx.read<AgentSessions>(),
+      sessions: DeskNativeSessions.wrap(ctx.read<AgentSessions>(), ctx.read<ObservedSessions?>()),
       settings: ctx.read<AgentSessionSettings>(),
       machineId: machineId,
       prefill: prefill,
@@ -184,14 +184,14 @@ class _FormState extends State<_Form> {
     if (session == null) return;
     if (open) {
       if (!mounted) return;
-      unawaited(openAgent(nav.context, SessionAgent(session.key), replace: true));
+      unawaited(openAgent(nav.context, agentRefOf(session), replace: true));
     } else {
       if (mounted) nav.pop();
       showStartedToast(
         toaster,
         message:
             '${session.agentLabel} started in ${placeName(session.machine.places, session.cwd)} · ${session.machine.profile.label}',
-        onOpen: () => unawaited(openAgent(nav.context, SessionAgent(session.key))),
+        onOpen: () => unawaited(openAgent(nav.context, agentRefOf(session))),
       );
     }
   }

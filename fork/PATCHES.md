@@ -11,6 +11,7 @@ stack small: every line changed in an upstream file is a line that can conflict.
 | F3 | `app/android/app/src/main/AndroidManifest.xml` | Launcher label `herdr j` (placeholder) tells the two apps apart. | Fork only. | Never. |
 | F4 | `fork/` (new files only) | This file, `sync.sh` and `test-sync.sh`. | Fork only. | Never. |
 | F5 | `.github/workflows/fork-sync.yml` (new file) | Runs the sync every 2 hours in two steps, so the fork follows upstream's newest release with nobody running anything: `fork/sync.sh --test` with no credential, then `fork/sync.sh --publish` with the deploy key in the repo secret `SYNC_DEPLOY_KEY` (see "Syncing and releases"). A conflict rerere cannot resolve opens (or comments on) the issue "Upstream sync conflict" and fails the run. | Fork only. | Never. |
+| F6 | `app/lib/fork/desk_native_sessions.dart` (new), `test/fork/desk_native_sessions_test.dart` (new), `app/lib/ui/features/create/new_agent_session_screen.dart` (4 hook lines) | Starting Claude Code from the phone's new-session form opens a herdr tab in that folder, types `claude` into its shell and opens the pane's observed chat, so the desk shows a real Claude Code pane instead of the keeper's herdr-tui viewer. Other agents and Resume keep the keeper path. The decorator implements `AgentSessions`, so a member upstream adds there fails the sync's build loudly. | Fork only for now; an opt-in proposal is drafted (not filed). | Upstream ships a terminal start for Claude Code. |
 
 ## Rules
 

@@ -1,0 +1,96 @@
+name: Fork sync
+
+# Keeps the default branch (jaya) on upstream's newest release: runs
+# fork/sync.sh, which rebases the fork patches onto the newest upstream vX.Y.Z,
+# tests, force-pushes the branch and pushes the tag (that tag push runs
+# release.yml). See fork/PATCHES.md.
+#
+# Needs the repository secret SYNC_TOKEN: a fine-grained PAT with Contents and
+# Workflows read/write on this repo. The built-in GITHUB_TOKEN cannot push
+# changes to workflow files, and a tag it pushes does not trigger release.yml.
+# The PAT is only handed to actions/checkout, which stores it for git.
+
+on:
+  schedule:
+    - cron: '23 */2 * * *'
+  workflow_dispatch:
+
+# The built-in token only reads code and files the conflict issue.
+permissions:
+  contents: read
+  issues: write
+
+# Two syncs must never overlap; a queued run waits instead of cancelling one
+# that is mid-push.
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: jaya
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Git identity and upstream remote
+        run: |
+          git config user.name "herdr j sync"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/tuan3w/herdr-mobile
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          # Caches the SDK and the pub cache (keyed on pubspec.lock).
+          cache: true
+
+      # Exit 0 (synced or up to date) passes, 2 (conflict rerere could not
+      # resolve) is reported by the next step, anything else fails the job.
+      - name: Sync
+        id: sync
+        env:
+          FLUTTER: flutter
+        run: |
+          set +e
+          fork/sync.sh --fork origin --push --test 2>&1 | tee "$RUNNER_TEMP/sync.log"
+          code=${PIPESTATUS[0]}
+          if [ "$code" = 2 ]; then
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit "$code"
+
+      - name: Report the conflict
+        if: steps.sync.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          log="$RUNNER_TEMP/sync.log"
+          tag=$(sed -n 's/^conflict rebasing .* onto \(v[0-9.]*\);.*/\1/p' "$log")
+          files=$(sed -n '/Conflicted files:$/,$p' "$log" | sed 1d)
+          {
+            echo "Upstream tag: \`$tag\`"
+            echo
+            echo "Conflicted files:"
+            echo '```'
+            echo "$files"
+            echo '```'
+            echo
+            echo "The \`jaya\` branch is untouched. Resolve it once on a scratch branch and run \`fork/sync.sh --push\` from that clone, which publishes the resolution for this workflow (see fork/PATCHES.md, \"Syncing and releases\"). Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$RUNNER_TEMP/issue.md"
+          title="Upstream sync conflict"
+          n=$(gh issue list --state open --limit 100 --json number,title --jq ".[] | select(.title == \"$title\") | .number" | sed -n 1p)
+          if [ -z "$n" ]; then
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+          elif gh issue view "$n" --json body,comments --jq '[.body, (.comments[].body)] | join("\n")' | grep -qF "Upstream tag: \`$tag\`"; then
+            echo "issue #$n already reports $tag"
+          else
+            gh issue comment "$n" --body-file "$RUNNER_TEMP/issue.md"
+          fi

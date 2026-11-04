@@ -10,7 +10,7 @@ stack small: every line changed in an upstream file is a line that can conflict.
 | F2 | `.github/workflows/release.yml` | The APK build passes `APP_REPOSITORY=${{ github.repository }}` and `appIdSuffix=.jaya`, so the fork app installs beside the stock app and updates from this repo. | Fork only. | Never, unless upstream reads both from repository variables. |
 | F3 | `app/android/app/src/main/AndroidManifest.xml` | Launcher label `herdr j` (placeholder) tells the two apps apart. | Fork only. | Never. |
 | F4 | `fork/` (new files only) | This file, `sync.sh` and `test-sync.sh`. | Fork only. | Never. |
-| F5 | `.github/workflows/fork-sync.yml` (new file) | Runs `fork/sync.sh --push --test` every 2 hours, so the fork follows upstream's newest release with nobody running anything. Needs the repo secret `SYNC_TOKEN` (fine-grained PAT, Contents and Workflows read/write): the built-in token cannot push workflow files, and a tag it pushes does not start `release.yml`. A conflict rerere cannot resolve opens (or comments on) the issue "Upstream sync conflict". | Fork only. | Never. |
+| F5 | `.github/workflows/fork-sync.yml` (new file) | Runs the sync every 2 hours in two steps, so the fork follows upstream's newest release with nobody running anything: `fork/sync.sh --test` with no credential, then `fork/sync.sh --publish` with the deploy key in the repo secret `SYNC_DEPLOY_KEY` (see "Syncing and releases"). A conflict rerere cannot resolve opens (or comments on) the issue "Upstream sync conflict" and fails the run. | Fork only. | Never. |
 
 ## Rules
 
@@ -26,18 +26,43 @@ stack small: every line changed in an upstream file is a line that can conflict.
 
 ## Syncing and releases
 
-- `fork/sync.sh [--push] [--test]` fetches upstream tags into `refs/upstream-tags/*`
+- `fork/sync.sh [--test] [--push]` fetches upstream tags into `refs/upstream-tags/*`
   (never into `refs/tags`), picks the highest plain `vX.Y.Z`, rebases `jaya` onto
-  it with rerere on, and tags the result with the same `vX.Y.Z`. With `--push` it
-  force-pushes `jaya` (with lease) and pushes the tag; the tag push runs
-  `release.yml` in the fork repo, which signs with the fork's own secrets.
+  it with rerere on, and tags the result with the same `vX.Y.Z`. `--test` runs
+  upstream's own test entry, `HERDR_TEST_ONLY=rest tool/check.sh --tests` (all
+  but the `timing` tests); `FLUTTER=/path/to/flutter` picks the SDK, otherwise
+  `tool/flutter-bin.sh` does. A failure puts `jaya` back.
+- `fork/sync.sh --publish` fetches and rebases nothing; it pushes what an
+  earlier run left in this clone: `jaya`, forced with a lease pinned to the
+  remote-tracking ref (no ref means the branch must not exist yet), so a push
+  made elsewhere since is refused; the plain `vX.Y.Z` tag on its head, if any;
+  and new conflict resolutions. With nothing new it changes nothing. `--push`
+  is a sync, then a `--publish`. The tag push runs `release.yml` in the fork
+  repo, which signs with the fork's own secrets.
+- `fork-sync.yml` runs in two phases, every 2 hours and on demand. "Sync and
+  test" checks out with `persist-credentials: false` and runs
+  `fork/sync.sh --fork origin --test`: upstream code (`pub get`, the tests) runs
+  with no credential in reach. "Publish" then loads the deploy key into an
+  `ssh-agent`, trusts only GitHub's SSH host keys from
+  `https://api.github.com/meta`, and runs `fork/sync.sh --fork origin --publish`.
+  Its key is the repository secret `SYNC_DEPLOY_KEY`, the private half of a
+  write deploy key on this repo, created by
+  `/Users/jaya/jaya/my-terminal/.scratch/herdr-interventions/tools/fork-keys.sh`.
+  The built-in token only reads and files issues (`contents: read`,
+  `issues: write`); a tag it pushed would not start `release.yml`.
+- To verify on the first real sync: whether a deploy-key push may carry
+  upstream's changes to `.github/workflows/*`. Believed yes, because the
+  `workflow` scope limit applies to OAuth tokens and `GITHUB_TOKEN`, not to
+  deploy keys. If GitHub refuses it, Publish fails and `jaya` stays where it was.
 - Fork tags reuse upstream's plain version numbers: the updater only accepts
   `X.Y.Z` (`app/lib/data/models/release_info.dart:40`), so no `-jaya` suffix.
 - Upstream tags already sitting in `refs/tags` (from a plain `git fetch upstream`)
   are moved to the fork commit by the sync. Set
   `git config remote.upstream.tagOpt --no-tags` to stop new ones arriving.
 - Exit 2 means a conflict rerere had no answer for; `jaya` is left untouched.
-  Resolve it once on a scratch branch, then let the sync replay it:
+  In CI the run then files the issue "Upstream sync conflict" (or comments on
+  the open one) and ends red. Resolve it once on a scratch branch, then let the
+  sync replay it:
 
   ```sh
   git switch -c scratch jaya
@@ -48,11 +73,11 @@ stack small: every line changed in an upstream file is a line that can conflict.
 
   Run that last step from the clone that recorded the resolution. The sync
   keeps the recorded resolutions (`.git/rr-cache`) on the orphan branch
-  `rr-cache` of the fork remote: it restores them before every rebase and, with
-  `--push`, publishes new ones (a plain fast-forward push; a rejected push only
-  warns, and the next `--push` run retries). That is how the scheduled workflow
-  replays a resolution made on the Mac. Without `--push` the branch is never
-  written. `fork-sync.yml` runs every 2 hours and on demand; GitHub pauses
-  scheduled workflows after 60 days without repository activity, so re-enable
-  it from the Actions tab if the fork has been quiet that long.
+  `rr-cache` of the fork remote: it restores them before every rebase, and a
+  publish pushes new ones (a plain fast-forward push; a rejected push only
+  warns, and the next publish retries). That is how the scheduled workflow
+  replays a resolution made on the Mac. Without `--push` or `--publish`
+  nothing is written to the remote. GitHub pauses scheduled workflows after 60
+  days without repository activity, so re-enable `fork-sync.yml` from the
+  Actions tab if the fork has been quiet that long.
 - `bash fork/test-sync.sh` checks the sync against throwaway repos.

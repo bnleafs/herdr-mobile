@@ -98,7 +98,11 @@ jobs:
       - name: Build APKs
         if: steps.sign.outputs.enabled == 'true'
         working-directory: app
-        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-debug-info=build/symbols --dart-define=APP_REPOSITORY=${{ github.repository }} --android-project-arg=appIdSuffix=.jaya
+        env:
+          MEGAWATT_SENTRY_DSN: ${{ secrets.MEGAWATT_SENTRY_DSN }}
+          MEGAWATT_POSTHOG_KEY: ${{ secrets.MEGAWATT_POSTHOG_KEY }}
+          MEGAWATT_POSTHOG_HOST: ${{ secrets.MEGAWATT_POSTHOG_HOST }}
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-debug-info=build/symbols --dart-define=APP_REPOSITORY=${{ github.repository }} --dart-define=MEGAWATT_SENTRY_DSN="$MEGAWATT_SENTRY_DSN" --dart-define=MEGAWATT_POSTHOG_KEY="$MEGAWATT_POSTHOG_KEY" --dart-define=MEGAWATT_POSTHOG_HOST="$MEGAWATT_POSTHOG_HOST" --android-project-arg=appIdSuffix=.jaya
 
       - name: Verify signature is not the debug key
         if: steps.sign.outputs.enabled == 'true'

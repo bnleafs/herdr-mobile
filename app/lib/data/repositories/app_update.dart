@@ -16,9 +16,10 @@ import '../services/release_files.dart';
 /// there after a restart, until it is installed).
 @immutable
 class UpdateRecord {
-  const UpdateRecord({this.autoCheck = true, this.lastCheck, this.release});
+  const UpdateRecord({this.autoCheck = true, this.autoDownload = true, this.lastCheck, this.release});
 
   final bool autoCheck;
+  final bool autoDownload;
   final DateTime? lastCheck;
   final ReleaseInfo? release;
 }
@@ -31,6 +32,7 @@ abstract interface class UpdateStore {
 
 class PrefsUpdateStore implements UpdateStore {
   static const _auto = 'update.auto.v1';
+  static const _autoDownload = 'update.autoDownload.v1';
   static const _last = 'update.lastCheck.v1';
   static const _release = 'update.release.v1';
 
@@ -40,6 +42,7 @@ class PrefsUpdateStore implements UpdateStore {
     final at = prefs.getInt(_last);
     return UpdateRecord(
       autoCheck: prefs.getBool(_auto) ?? true,
+      autoDownload: prefs.getBool(_autoDownload) ?? true,
       lastCheck: at == null ? null : DateTime.fromMillisecondsSinceEpoch(at),
       release: ReleaseInfo.decode(prefs.getString(_release)),
     );
@@ -49,6 +52,7 @@ class PrefsUpdateStore implements UpdateStore {
   Future<void> write(UpdateRecord record) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_auto, record.autoCheck);
+    await prefs.setBool(_autoDownload, record.autoDownload);
     final at = record.lastCheck;
     if (at == null) {
       await prefs.remove(_last);
@@ -109,8 +113,10 @@ class AppUpdate extends ChangeNotifier {
     required this.installer,
     AppVersion? current,
     DateTime Function()? now,
+    bool autoDownload = true,
   }) : _current = current ?? AppVersion.tryParse(appVersion)!,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _autoDownload = autoDownload;
 
   /// How long a check stays fresh. Also the wait after a failed one: a phone
   /// on a bad radio is not asked again every time the app is opened.
@@ -124,6 +130,7 @@ class AppUpdate extends ChangeNotifier {
   final DateTime Function() _now;
 
   bool _autoCheck = true;
+  bool _autoDownload = true;
   DateTime? _lastCheck;
   ReleaseInfo? _release;
   UpdateStage _stage = UpdateStage.idle;
@@ -135,10 +142,14 @@ class AppUpdate extends ChangeNotifier {
   bool _installing = false;
   File? _apk;
   UpdateDownload? _job;
+  String? _autoDownloadedVersion;
   bool _disposed = false;
 
   /// Whether GitHub is asked about twice a day without the person asking.
   bool get autoCheck => _autoCheck;
+
+  /// Whether a newer version is downloaded automatically once found.
+  bool get autoDownload => _autoDownload;
 
   /// The newer release the person can install, or null.
   ReleaseInfo? get release => _release;
@@ -170,6 +181,7 @@ class AppUpdate extends ChangeNotifier {
     try {
       final saved = await store.read();
       _autoCheck = saved.autoCheck;
+      _autoDownload = saved.autoDownload;
       _lastCheck = saved.lastCheck;
       final release = saved.release;
       if (release == null) return;
@@ -177,7 +189,7 @@ class AppUpdate extends ChangeNotifier {
       if (known.compareTo(_current) <= 0) {
         // Installed (or older than what is installed): its file is not needed.
         unawaited(files.prune());
-        await store.write(UpdateRecord(autoCheck: _autoCheck, lastCheck: _lastCheck));
+        await store.write(UpdateRecord(autoCheck: _autoCheck, autoDownload: _autoDownload, lastCheck: _lastCheck));
         return;
       }
       _release = release;
@@ -196,6 +208,17 @@ class AppUpdate extends ChangeNotifier {
     _notify();
     await _save();
     if (on) unawaited(checkIfDue());
+  }
+
+  Future<void> setAutoDownload(bool on) async {
+    if (on == _autoDownload) return;
+    _autoDownload = on;
+    _notify();
+    await _save();
+    if (on && _release != null && _apk == null && _stage == UpdateStage.idle) {
+      _autoDownloadedVersion = null;
+      unawaited(download());
+    }
   }
 
   /// The app came to the front: ask GitHub when the person allows it and the
@@ -220,16 +243,19 @@ class AppUpdate extends ChangeNotifier {
     _notify();
     try {
       final found = await feed.newerThan(_current);
+      if (_disposed) return;
       if (found == null) {
         _release = null;
         _apk = null;
         _upToDate = true;
         _problem = null;
+        _autoDownloadedVersion = null;
         unawaited(files.prune());
       } else if (found != _release) {
         _release = found;
         _upToDate = false;
         _problem = null;
+        _autoDownloadedVersion = null;
         _apk = await files.verified(found);
         unawaited(files.prune(keep: found));
       }
@@ -237,11 +263,23 @@ class AppUpdate extends ChangeNotifier {
     } on Object catch (e) {
       if (manual) _checkProblem = e is UpdateException ? e.message : 'Couldn’t look for updates.';
     } finally {
-      _lastCheck = _now();
-      _stage = _apk != null && _release != null ? UpdateStage.ready : UpdateStage.idle;
-      _notify();
-      await _save();
+      if (!_disposed) {
+        _lastCheck = _now();
+        _stage = _apk != null && _release != null ? UpdateStage.ready : UpdateStage.idle;
+        _notify();
+        await _save();
+        _maybeAutoDownload();
+      }
     }
+  }
+
+  void _maybeAutoDownload() {
+    if (!_autoDownload || _disposed) return;
+    final release = _release;
+    if (release == null || _apk != null || _stage != UpdateStage.idle) return;
+    if (_autoDownloadedVersion == release.version) return;
+    _autoDownloadedVersion = release.version;
+    unawaited(download());
   }
 
   /// Downloads [release]'s APK and checks it. The person's tap: it costs
@@ -253,32 +291,40 @@ class AppUpdate extends ChangeNotifier {
     _received = 0;
     _problem = null;
     _needsPermission = false;
+    _autoDownloadedVersion = release.version;
     _notify();
     final job = _job = files.download(release, (n) {
-      _received = n;
-      _notify();
+      if (!_disposed) {
+        _received = n;
+        _notify();
+      }
     });
     var stale = false;
     try {
-      _apk = await job.done;
+      final apk = await job.done;
+      if (_disposed) return;
+      _apk = apk;
       _stage = UpdateStage.ready;
     } on UpdateCancelled {
+      if (_disposed) return;
       _stage = UpdateStage.idle;
     } on StaleRelease catch (e) {
+      if (_disposed) return;
       _stage = UpdateStage.idle;
       _problem = e.message;
       stale = true;
     } on UpdateException catch (e) {
+      if (_disposed) return;
       _stage = UpdateStage.idle;
       _problem = e.message;
     } finally {
       _job = null;
-      _notify();
+      if (!_disposed) _notify();
     }
     // The release was probably published again under the same tag: read it
     // again now (one small request), so the next Download is for what is
     // there, not another 50 MB for the old description of it.
-    if (stale) await _refresh();
+    if (stale && !_disposed) await _refresh();
   }
 
   Future<void> _refresh() async {
@@ -323,7 +369,9 @@ class AppUpdate extends ChangeNotifier {
     }
   }
 
-  Future<void> _save() => store.write(UpdateRecord(autoCheck: _autoCheck, lastCheck: _lastCheck, release: _release));
+  Future<void> _save() => store.write(
+    UpdateRecord(autoCheck: _autoCheck, autoDownload: _autoDownload, lastCheck: _lastCheck, release: _release),
+  );
 
   void _notify() {
     if (!_disposed) notifyListeners();

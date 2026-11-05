@@ -2,26 +2,28 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/app_info.dart';
 import 'package:herdr_mobile/data/models/release_info.dart';
 import 'package:herdr_mobile/data/repositories/app_update.dart';
 import 'package:herdr_mobile/data/services/apk_installer.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/update_fakes.dart';
 
-const _base = 'https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.7';
+const _base = 'https://github.com/$appRepository/releases/download/v0.1.7';
 
 ReleaseInfo _release([String version = '0.1.7']) => ReleaseInfo(
   version: version,
   apkUrl: '$_base/herdr-mobile-$version.apk',
   size: 1000,
-  pageUrl: 'https://github.com/tuan3w/herdr-mobile/releases/tag/v$version',
+  pageUrl: 'https://github.com/$appRepository/releases/tag/v$version',
   notes: '### Better\n\n- a thing',
   sha256: 'a' * 64,
 );
 
 Map<String, Object?> _github({String tag = 'v0.1.7', List<Map<String, Object?>>? assets}) => {
   'tag_name': tag,
-  'html_url': 'https://github.com/tuan3w/herdr-mobile/releases/tag/$tag',
+  'html_url': 'https://github.com/$appRepository/releases/tag/$tag',
   'body': '  notes  ',
   'assets':
       assets ??
@@ -122,15 +124,15 @@ void main() {
       expect(asset('$_base/../../../../other/repo/releases/download/v1/herdr-mobile-0.1.7.apk'), 'refused');
       expect(asset('$_base/herdr-mobile-0.1.7.apk?x=1'), 'refused');
       expect(
-        asset('https://github.com:8443/tuan3w/herdr-mobile/releases/download/v0.1.7/herdr-mobile-0.1.7.apk'),
+        asset('https://github.com:8443/$appRepository/releases/download/v0.1.7/herdr-mobile-0.1.7.apk'),
         'refused',
       );
       expect(
-        asset('https://user@github.com/tuan3w/herdr-mobile/releases/download/v0.1.7/herdr-mobile-0.1.7.apk'),
+        asset('https://user@github.com/$appRepository/releases/download/v0.1.7/herdr-mobile-0.1.7.apk'),
         'refused',
       );
       expect(asset('https://github.com/other/repo/releases/download/v0.1.7/herdr-mobile-0.1.7.apk'), 'refused');
-      expect(asset('http://github.com/tuan3w/herdr-mobile/releases/download/v0.1.7/herdr-mobile-0.1.7.apk'), 'refused');
+      expect(asset('http://github.com/$appRepository/releases/download/v0.1.7/herdr-mobile-0.1.7.apk'), 'refused');
     });
 
     test('a field of the wrong type is read as missing', () {
@@ -168,7 +170,7 @@ void main() {
       feed = FakeReleaseFeed();
       files = FakeReleaseFiles();
       installer = FakeApkInstaller();
-      store = MemoryUpdateStore();
+      store = MemoryUpdateStore(const UpdateRecord(autoDownload: false));
       now = DateTime(2026, 10, 9, 12);
       update = AppUpdate(
         store: store,
@@ -177,6 +179,7 @@ void main() {
         installer: installer,
         current: AppVersion.tryParse('0.1.6'),
         now: () => now,
+        autoDownload: false,
       );
     });
 
@@ -384,6 +387,232 @@ void main() {
       expect(store.record.release, isNull);
       expect(store.record.autoCheck, isFalse);
       expect(files.pruned, contains(null));
+    });
+  });
+
+  group('automatic APK update checks and download', () {
+    late FakeReleaseFeed feed;
+    late FakeReleaseFiles files;
+    late FakeApkInstaller installer;
+    late MemoryUpdateStore store;
+    late DateTime now;
+    late AppUpdate autoUpdate;
+
+    setUp(() {
+      feed = FakeReleaseFeed();
+      files = FakeReleaseFiles();
+      installer = FakeApkInstaller();
+      store = MemoryUpdateStore();
+      now = DateTime(2026, 10, 9, 12);
+      autoUpdate = AppUpdate(
+        store: store,
+        feed: feed,
+        files: files,
+        installer: installer,
+        current: AppVersion.tryParse('0.1.6'),
+        now: () => now,
+      );
+    });
+
+    tearDown(() => autoUpdate.dispose());
+
+    test('checking finds newer -> exactly1 automatic download -> verified Ready state', () async {
+      feed.answer = _release('0.1.7');
+      expect(autoUpdate.autoDownload, isTrue);
+      expect(autoUpdate.stage, UpdateStage.idle);
+
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.downloading);
+      expect(files.running, isNotNull);
+
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(autoUpdate.stage, UpdateStage.ready);
+      expect(installer.installed, isEmpty, reason: 'install is never triggered silently');
+
+      // Subsequent checks do not start duplicate downloads:
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.ready);
+    });
+
+    test('off no download/manual still works', () async {
+      await autoUpdate.setAutoDownload(false);
+      expect(autoUpdate.autoDownload, isFalse);
+
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.idle);
+      expect(files.running, isNull);
+      expect(autoUpdate.release?.version, '0.1.7');
+
+      final done = autoUpdate.download();
+      expect(autoUpdate.stage, UpdateStage.downloading);
+      expect(files.running, isNotNull);
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await done;
+      expect(autoUpdate.stage, UpdateStage.ready);
+    });
+
+    test('known/latest/no update: stays idle, no download', () async {
+      feed.answer = null;
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.idle);
+      expect(autoUpdate.release, isNull);
+      expect(autoUpdate.upToDate, isTrue);
+      expect(files.running, isNull);
+    });
+
+    test('throttled resume: respects checkEvery interval and offered release guard', () async {
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      final asked = feed.asked;
+      expect(asked, 1);
+
+      autoUpdate.onLifecycleState(AppLifecycleState.resumed);
+      await Future<void>.delayed(Duration.zero);
+      expect(feed.asked, asked);
+
+      now = now.add(const Duration(days: 1));
+      autoUpdate.onLifecycleState(AppLifecycleState.resumed);
+      await Future<void>.delayed(Duration.zero);
+      expect(feed.asked, asked);
+    });
+
+    test('concurrent check/manual/download: cannot start simultaneous duplicate jobs', () async {
+      feed.answer = _release('0.1.7');
+      final checkFuture = autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.checking);
+
+      await autoUpdate.check();
+      expect(feed.asked, 1);
+
+      await autoUpdate.download();
+      expect(files.running, isNull);
+
+      await checkFuture;
+      expect(autoUpdate.stage, UpdateStage.downloading);
+      final runningJob = files.running;
+
+      await autoUpdate.download();
+      expect(files.running, same(runningJob));
+
+      await autoUpdate.check();
+      expect(feed.asked, 1);
+    });
+
+    test('download error: no install and no automatic retry loop', () async {
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.downloading);
+
+      files.running!.completeError(const UpdateException('Connection reset by peer'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(autoUpdate.stage, UpdateStage.idle);
+      expect(autoUpdate.problem, 'Connection reset by peer');
+      expect(installer.installed, isEmpty);
+
+      now = now.add(const Duration(hours: 15));
+      autoUpdate.onLifecycleState(AppLifecycleState.resumed);
+      await Future<void>.delayed(Duration.zero);
+      expect(autoUpdate.stage, UpdateStage.idle);
+
+      final retryDone = autoUpdate.download();
+      expect(autoUpdate.stage, UpdateStage.downloading);
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await retryDone;
+      expect(autoUpdate.stage, UpdateStage.ready);
+    });
+
+    test('download cancel: returns to idle with no error and no retry loop', () async {
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.downloading);
+
+      autoUpdate.cancelDownload();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(autoUpdate.stage, UpdateStage.idle);
+      expect(autoUpdate.problem, isNull);
+      expect(installer.installed, isEmpty);
+
+      now = now.add(const Duration(hours: 15));
+      autoUpdate.onLifecycleState(AppLifecycleState.resumed);
+      await Future<void>.delayed(Duration.zero);
+      expect(autoUpdate.stage, UpdateStage.idle);
+    });
+
+    test('download hash mismatch (stale release): no install and no retry loop', () async {
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.downloading);
+
+      files.running!.completeError(const StaleRelease('SHA-256 digest did not match'));
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(autoUpdate.stage, UpdateStage.idle);
+      expect(autoUpdate.problem, 'SHA-256 digest did not match');
+      expect(installer.installed, isEmpty);
+      expect(autoUpdate.stage, UpdateStage.idle);
+    });
+
+    test('restored Ready no duplicate: existing verified file on disk restores ready state', () async {
+      final release = _release('0.1.7');
+      files.onPhone = File('/cache/updates/herdr-mobile-0.1.7.apk');
+      store.record = UpdateRecord(autoCheck: true, autoDownload: true, release: release);
+
+      final fresh = AppUpdate(
+        store: store,
+        feed: feed,
+        files: files,
+        installer: installer,
+        current: AppVersion.tryParse('0.1.6'),
+      );
+      addTearDown(fresh.dispose);
+
+      await fresh.load();
+      expect(fresh.stage, UpdateStage.ready);
+      expect(fresh.release?.version, '0.1.7');
+      expect(files.running, isNull, reason: 'must not trigger duplicate download on restore');
+    });
+
+    test('turning on autoDownload can start currently available release once', () async {
+      await autoUpdate.setAutoDownload(false);
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.idle);
+      expect(files.running, isNull);
+
+      await autoUpdate.setAutoDownload(true);
+      expect(autoUpdate.stage, UpdateStage.downloading);
+      expect(files.running, isNotNull);
+
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await Future<void>.delayed(Duration.zero);
+      expect(autoUpdate.stage, UpdateStage.ready);
+    });
+
+    test('toggle off prevents new automatic download', () async {
+      await autoUpdate.setAutoDownload(false);
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.idle);
+      expect(files.running, isNull);
+    });
+
+    test('persistence backward compatible: old store missing autoDownload defaults to true', () async {
+      SharedPreferences.setMockInitialValues({'update.auto.v1': false, 'update.lastCheck.v1': 1000});
+      final prefsStore = PrefsUpdateStore();
+      final record = await prefsStore.read();
+      expect(record.autoCheck, isFalse);
+      expect(record.autoDownload, isTrue, reason: 'missing autoDownload in prefs defaults to true');
+    });
+
+    test('explicit fork source: default is bnleafs/herdr-mobile', () {
+      expect(appRepository, 'bnleafs/herdr-mobile');
+      expect(appRepositoryUrl, 'https://github.com/bnleafs/herdr-mobile');
     });
   });
 }

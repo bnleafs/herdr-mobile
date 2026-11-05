@@ -20,10 +20,15 @@ typedef PaneProcesses = Future<List<PaneProcess>> Function(String paneId);
 /// session started or resumed after that. Without it, the running process
 /// tells: `~/.claude/sessions/{pid}.json` maps a `claude` pid to its session id.
 class ClaudeLocator implements SessionLogLocator {
-  ClaudeLocator();
+  ClaudeLocator({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+
+  final DateTime Function() _clock;
 
   /// Session ids whose project folders were all looked into without finding the file.
   final _scanned = <String>{};
+
+  /// First seen time of a running Claude process with missing pid file, keyed by '$paneId/$pid'.
+  final _firstSeen = <String, DateTime>{};
 
   /// Shown verbatim.
   static const unlinkedWhy =
@@ -31,6 +36,11 @@ class ClaudeLocator implements SessionLogLocator {
       '"Read as chat…", or run "herdr integration install claude" on the machine), then resume the session.';
 
   static const notYetWhy = 'Claude has not written this session yet.';
+
+  static const readinessWhy = 'Claude is starting this session.';
+
+  /// Grace window before falling back to Unlinked for a Claude process without a pid file.
+  static const graceWindow = Duration(seconds: 90);
 
   static final _sessionId = RegExp(r'^[0-9a-f-]{36}$');
   static final _unsafeInName = RegExp(r'[^A-Za-z0-9]');
@@ -52,8 +62,11 @@ class ClaudeLocator implements SessionLogLocator {
     // The running process is the truth about which session the pane runs: the
     // session herdr reports is the one the hook saw last, and stays after the
     // agent in the pane was exited and started again.
-    final byProcess = await _byProcess(files, processes, pane);
-    if (byProcess != null) return byProcess;
+    final (byProcess, missingPid) = await _byProcess(files, processes, pane);
+    if (byProcess != null) {
+      if (missingPid != null) _firstSeen.remove('${pane.id}/$missingPid');
+      return byProcess;
+    }
     final session = pane.session;
     if (session != null) {
       if (session.kind == 'path' && isReadableLogPath(session.value)) {
@@ -65,33 +78,46 @@ class ClaudeLocator implements SessionLogLocator {
         return _byId(files, session.value, cwd: pane.cwd);
       }
     }
+    if (missingPid != null) {
+      final key = '${pane.id}/$missingPid';
+      final first = _firstSeen.putIfAbsent(key, _clock);
+      if (_clock().difference(first) <= graceWindow) {
+        return const NotYet(readinessWhy);
+      }
+    }
     return const Unlinked(unlinkedWhy);
   }
 
   /// The log of the session the `claude` process in [pane] runs
   /// (`~/.claude/sessions/<pid>.json` names it), or null when that cannot be
   /// told (an old herdr, no such process, no file of its own).
-  Future<LogLocation?> _byProcess(RemoteFiles files, PaneProcesses processes, Pane pane) async {
+  Future<(LogLocation?, int?)> _byProcess(RemoteFiles files, PaneProcesses processes, Pane pane) async {
     final List<PaneProcess> running;
     try {
       running = await processes(pane.id);
     } on HerdrApiException {
       // An old herdr (unsupported) or one that refuses: the report is all there is.
-      return null;
+      return (null, null);
     }
     final home = await files.home();
+    int? missingPid;
     for (final p in running) {
       if (!_isClaude(p)) continue;
-      final json = await _readPidFile(files, '$home/.claude/sessions/${p.pid}.json');
+      final (json, missing) = await _readPidFile(files, '$home/.claude/sessions/${p.pid}.json');
+      if (missing) {
+        missingPid ??= p.pid;
+        continue;
+      }
       // The file must be this process's own: a stale one of a crashed process
       // whose pid was reused names another session.
       if (json == null || json['kind'] != 'interactive' || json['pid'] != p.pid) continue;
       final id = json['sessionId'];
       if (id is! String || !_sessionId.hasMatch(id)) continue;
       final cwd = json['cwd'];
-      return _byId(files, id, cwd: cwd is String ? cwd : pane.cwd);
+      final loc = await _byId(files, id, cwd: cwd is String ? cwd : pane.cwd);
+      return (loc, p.pid);
     }
-    return null;
+    return (null, missingPid);
   }
 
   /// The foreground process is Claude Code itself: its `argv0` (or the first
@@ -105,16 +131,17 @@ class ClaudeLocator implements SessionLogLocator {
     return base(p.argv0) == 'claude' || base(first) == 'claude' || p.name == 'claude';
   }
 
-  Future<Map<String, dynamic>?> _readPidFile(RemoteFiles files, String path) async {
+  Future<(Map<String, dynamic>?, bool)> _readPidFile(RemoteFiles files, String path) async {
     try {
       final bytes = await files.read(path, length: maxPidFile + 1);
-      if (bytes.length > maxPidFile) return null;
+      if (bytes.length > maxPidFile) return (null, false);
       final json = jsonDecode(utf8.decode(bytes, allowMalformed: true));
-      return json is Map<String, dynamic> ? json : null;
+      return (json is Map<String, dynamic> ? json : null, false);
     } on FormatException {
-      return null;
+      return (null, false);
     } on RemoteFileException catch (e) {
-      if (_absent(e)) return null;
+      if (e.kind == RemoteFileErrorKind.notFound) return (null, true);
+      if (_absent(e)) return (null, false);
       rethrow;
     }
   }

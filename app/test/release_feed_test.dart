@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/app_info.dart';
 import 'package:herdr_mobile/data/models/release_info.dart';
 import 'package:herdr_mobile/data/services/release_feed.dart';
 
@@ -34,7 +35,7 @@ void main() {
   GitHubReleaseFeed feed() => GitHubReleaseFeed(url: Uri.parse('http://127.0.0.1:${server.port}/latest'));
 
   String release(String tag, {Object? size = 10}) {
-    final base = 'https://github.com/tuan3w/herdr-mobile/releases/download/$tag';
+    final base = '$appRepositoryUrl/releases/download/$tag';
     return jsonEncode({
       'tag_name': tag,
       'assets': [

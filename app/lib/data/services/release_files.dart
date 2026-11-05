@@ -244,7 +244,7 @@ class HttpReleaseFiles implements ReleaseFiles {
       final m = RegExp(r'^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$').firstMatch(line);
       if (m != null && m[2] == release.fileName) return m[1]!.toLowerCase();
     }
-    throw UpdateException('Version ${release.version} has no checksum for its APK, so herdr won’t install it.');
+    throw UpdateException('Version ${release.version} has no checksum for its APK, so MegaWatt won’t install it.');
   }
 }
 

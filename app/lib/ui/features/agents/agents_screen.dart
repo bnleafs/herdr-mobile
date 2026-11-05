@@ -17,7 +17,7 @@ import '../machines/approval_button.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
-import '../../../fork/home_creation.dart';
+import '../create/new_agent_session_screen.dart';
 import '../../shell/home_pages.dart';
 import '../../support/step_clock.dart';
 import '../../support/tap_guard.dart';
@@ -157,7 +157,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
 
   void _addMachine() => openMachineForm(context);
 
-  void _newSession() => unawaited(showHomeCreationChooser(context));
+  void _newSession() => unawaited(openNewAgentSession(context));
 
   void _showMachines() => widget.pages.open(context, HomePage.machines);
 
@@ -945,6 +945,19 @@ class _ConnectionStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
+    final isTransient = troubled.every(
+      (t) => t.error == null && (t.state == LinkState.connecting || t.state == LinkState.reconnecting),
+    );
+    if (isTransient) {
+      final title = troubled.length > 1
+          ? '${countOf(troubled.length, 'machine')} connecting…'
+          : '${troubled.single.label} · connecting…';
+      return SubtleLoadingIndicator(
+        key: ValueKey(title),
+        title: title,
+        leading: LinkDot(state: troubled.first.state),
+      );
+    }
     if (troubled.length > 1) {
       final state = worstLinkState(troubled.map((t) => t.state));
       return StatusStrip(

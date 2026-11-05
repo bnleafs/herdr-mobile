@@ -623,11 +623,9 @@ class _AgentEnv {
     }
   }
 
-  /// From the board's plus: the New chooser, then its Agent session action.
+  /// From the board's plus.
   Future<void> openFormFromBoard(WidgetTester tester) async {
     await tester.tap(find.byTooltip('New agent session'));
-    await _flush(tester);
-    await tester.tap(find.text('Agent session'));
     await _flush(tester);
   }
 

@@ -3,16 +3,16 @@ import 'envelope.dart';
 /// In-memory bounded queue for telemetry envelopes.
 ///
 /// Limits:
-/// - Maximum 100 events (FIFO eviction of oldest events).
+/// - Maximum 200 events (FIFO eviction of oldest events).
 /// - 24-hour time-to-live (TTL).
-/// - Sliding window rate limiter: maximum 30 events per minute.
+/// - Sliding window rate limiter: maximum 120 events per minute.
 ///
 /// Contains NO disk persistence or shared_preferences backing.
 class TelemetryQueue {
   TelemetryQueue({
-    this.maxCapacity = 100,
+    this.maxCapacity = 200,
     this.ttl = const Duration(hours: 24),
-    this.maxPerMinute = 30,
+    this.maxPerMinute = 120,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now;
 
@@ -36,13 +36,13 @@ class TelemetryQueue {
 
   /// Attempts to enqueue [envelope].
   ///
-  /// Returns `true` if accepted, `false` if dropped by the 30/minute rate limiter.
+  /// Returns `true` if accepted, `false` if dropped by the 120/minute rate limiter.
   /// If capacity is exceeded, the oldest event is evicted (FIFO).
   bool enqueue(TelemetryEnvelope envelope) {
     final now = _clock();
     _pruneExpired(now);
 
-    // Sliding window rate limiter: max 30 per minute
+    // Sliding window rate limiter: max 120 per minute
     final oneMinuteAgo = now.subtract(const Duration(minutes: 1));
     _recentTimestamps.removeWhere((t) => t.isBefore(oneMinuteAgo));
     if (_recentTimestamps.length >= maxPerMinute) {

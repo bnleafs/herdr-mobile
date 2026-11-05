@@ -113,7 +113,7 @@ void main() {
 
     test('registers the small icon and the three channels', () async {
       await LocalNotifier.start();
-      expect(android.only('initialize'), containsPair('defaultIcon', 'ic_stat_herdr'));
+      expect(android.only('initialize'), containsPair('defaultIcon', 'ic_stat_megawatt'));
       final channels = {
         for (final c in android.called('createNotificationChannel'))
           (c.arguments as Map)['id'] as String: c.arguments as Map,
@@ -143,7 +143,8 @@ void main() {
       expect(details['groupKey'], 'agents');
       expect(details['autoCancel'], isTrue);
       expect(details['onlyAlertOnce'], isTrue);
-      expect(details['icon'], 'ic_stat_herdr');
+      expect(details['icon'], 'ic_stat_megawatt');
+      expect(details['largeIcon'], 'ic_megawatt_large');
       expect([details['colorRed'], details['colorGreen'], details['colorBlue']], [0x5E, 0x6A, 0xD2]);
       expect(details['when'], isA<int>());
     });
@@ -218,6 +219,8 @@ void main() {
       expect(details['ongoing'], isTrue);
       expect(details['silent'], isTrue);
       expect(details['autoCancel'], isFalse);
+      expect(details['icon'], 'ic_stat_megawatt');
+      expect(details['largeIcon'], 'ic_megawatt_large');
       expect(started()['foregroundServiceTypes'], [AndroidServiceForegroundType.foregroundServiceTypeSpecialUse.value]);
       expect(
         started()['startType'],

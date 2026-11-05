@@ -107,7 +107,7 @@ class PrefsDictationStore implements DictationStore {
 /// Why a listen did not start or ended badly, in words for the person: what
 /// happened and what to do next. Null when nothing is wrong.
 enum DictationProblem {
-  denied('Microphone is off for herdr. Allow it in Android settings > Apps > herdr > Permissions.'),
+  denied('Microphone is off for MegaWatt. Allow it in Android settings > Apps > MegaWatt > Permissions.'),
   unavailable('This phone has no speech service. Install or enable Google speech services.'),
   language('The speech service doesn’t have this language. Pick another one with a long press on the mic.'),
   offline('Speech needs a connection, or an offline language installed in the speech service.'),

@@ -14,6 +14,8 @@ import 'package:herdr_mobile/data/services/ssh_transport.dart' show hostKeyChang
 import 'package:herdr_mobile/data/words/plural.dart';
 import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 
+import 'settings_sync.dart';
+
 const accountBoxHost = '140.245.204.23';
 const accountBoxPort = 22;
 const accountBoxUser = 'herdrj';
@@ -105,10 +107,11 @@ abstract final class AccountWords {
 }
 
 class VaultContents {
-  const VaultContents({this.machines = const [], this.secrets = const {}});
+  const VaultContents({this.machines = const [], this.secrets = const {}, this.settings});
 
   final List<MachineProfile> machines;
   final Map<String, MachineSecrets> secrets;
+  final Map<String, dynamic>? settings;
 
   Map<String, dynamic> toJson() => {
     'machines': [
@@ -124,6 +127,7 @@ class VaultContents {
             if (entry.value.password != null) 'password': entry.value.password,
           },
     },
+    if (settings != null) 'settings': settings,
   };
 
   static VaultContents fromJson(Object? json) {
@@ -251,7 +255,22 @@ class VaultContents {
       }
     }
 
-    return VaultContents(machines: machines, secrets: secrets);
+    final rawSettings = json['settings'];
+    Map<String, dynamic>? settings;
+    if (rawSettings != null) {
+      if (rawSettings is! Map) {
+        throw const FormatException('Expected settings map');
+      }
+      final sanitized = <String, dynamic>{};
+      for (final key in SettingsSyncKeys.allowlist) {
+        if (rawSettings.containsKey(key)) {
+          sanitized[key] = rawSettings[key];
+        }
+      }
+      settings = sanitized;
+    }
+
+    return VaultContents(machines: machines, secrets: secrets, settings: settings);
   }
 }
 
@@ -273,6 +292,14 @@ String computeSnapshotDigest(VaultContents contents) {
       ..sort((a, b) => a.key.compareTo(b.key)),
   );
 
+  final Map<String, dynamic>? canonicalSettings;
+  if (contents.settings != null) {
+    final sortedKeys = contents.settings!.keys.toList()..sort();
+    canonicalSettings = {for (final k in sortedKeys) k: contents.settings![k]};
+  } else {
+    canonicalSettings = null;
+  }
+
   final canonical = jsonEncode({
     'machines': [for (final m in sortedMachines) m.toJson()],
     'secrets': {
@@ -283,6 +310,7 @@ String computeSnapshotDigest(VaultContents contents) {
           if (e.value.password != null) 'password': e.value.password,
         },
     },
+    'settings': ?canonicalSettings,
   });
 
   return sha256.convert(utf8.encode(canonical)).toString();
@@ -442,6 +470,7 @@ class AccountVault {
   AccountVault({
     required this.machines,
     required this.connect,
+    this.settingsSync,
     this.timeout = accountTimeout,
     this.check = _allowOperation,
     this.sealSnapshot = sealVault,
@@ -449,6 +478,7 @@ class AccountVault {
 
   final MachineRepository machines;
   final TransportFactory connect;
+  final SettingsSync? settingsSync;
   final Duration timeout;
   final void Function() check;
   final Future<String> Function(VaultContents, Uint8List) sealSnapshot;
@@ -515,6 +545,11 @@ class AccountVault {
   /// Prepare and validate the entire import before writing the first record.
   /// Missing fields never replace working local credentials with partial ones.
   Future<({int added, int updated})> importContents(VaultContents contents) async {
+    if (settingsSync != null && contents.settings != null) {
+      check();
+      await settingsSync!.applyRemote(contents.settings!);
+      check();
+    }
     final prepared = <({MachineProfile profile, MachineSecrets secrets, bool existed})>[];
     for (final imported in contents.machines) {
       check();
@@ -584,7 +619,10 @@ class AccountVault {
       }
     }
     check();
-    final file = await sealSnapshot(VaultContents(machines: allMachines, secrets: contents.secrets), accountKey);
+    final file = await sealSnapshot(
+      VaultContents(machines: allMachines, secrets: contents.secrets, settings: contents.settings),
+      accountKey,
+    );
     check();
     if (utf8.encode(file).length >= vaultMaxBytes) {
       throw const AccountProblem(AccountWords.overMaxBytes);

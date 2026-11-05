@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../models/machine_profile.dart';
 import 'background_grace.dart';
 import '../services/network_monitor.dart';
+import '../../fork/telemetry/envelope.dart';
+import '../../fork/telemetry/telemetry.dart';
 import 'agent_screens.dart';
 import 'fleet_agent.dart';
 import 'machine_connection.dart';
@@ -35,6 +37,7 @@ class FleetRepository extends ChangeNotifier {
     this._screens,
     PaneSessionNames? names,
     this.probeTimeout = const Duration(seconds: 4),
+    this.longAway = const Duration(seconds: 5),
     this.backgroundSuspendAfter = defaultBackgroundGrace,
     this._clock = DateTime.now,
   }) : reviewed = reviewed ?? ReviewedState(),
@@ -65,6 +68,10 @@ class FleetRepository extends ChangeNotifier {
   /// How long a connection that is up is given to answer when the app is back
   /// from the background, before it is rebuilt (see [onForeground]).
   final Duration probeTimeout;
+
+  /// Sockets die while the app is suspended. Back after more than this, the
+  /// connections are reset instead of trusted.
+  final Duration longAway;
 
   /// Continuous time in the background after which connections are torn down
   /// to save battery; asked when the app goes away.
@@ -331,14 +338,16 @@ class FleetRepository extends ChangeNotifier {
         _syncBackground();
         _suspendTimer = Timer(backgroundSuspendAfter(), _graceEnded);
       case AppLifecycleState.resumed:
-        if (_backgroundedAt == null) return;
+        final at = _backgroundedAt;
+        if (at == null) return;
+        final away = _clock().difference(at);
         _backgroundedAt = null;
         _graceElapsed = false;
         _syncBackground();
         names.sync(); // reads that waited for the foreground start now
         _suspendTimer?.cancel();
         _suspendTimer = null;
-        unawaited(onForeground());
+        unawaited(onForeground(away: away));
       case AppLifecycleState.inactive || AppLifecycleState.detached:
         break;
     }
@@ -352,7 +361,7 @@ class FleetRepository extends ChangeNotifier {
   /// the path) is learned from the answer: an error, or none within
   /// [probeTimeout], and the connection is rebuilt, as it always was. A
   /// connection that was kept ([keeps]) is probed the same way.
-  Future<void> onForeground() async {
+  Future<void> onForeground({Duration? away}) async {
     if (_disposed) return;
     final wasSuspended = {..._suspended};
     _suspended.clear();
@@ -362,16 +371,27 @@ class FleetRepository extends ChangeNotifier {
       }
       return;
     }
-    final probe = <MachineConnection>[];
+    final a = away ?? Duration.zero;
+    final refresh = <MachineConnection>[];
+    var reconnectCount = 0;
     for (final c in connections) {
-      if (wasSuspended.contains(c.profile.id)) {
+      final id = c.profile.id;
+      if (wasSuspended.contains(id) || (a > longAway && !keeps(id))) {
+        reconnectCount++;
+        c.markConnect(ConnectPath.rebuiltResume);
         c.reconnect();
       } else {
-        probe.add(c);
+        c.markConnect(ConnectPath.refreshedResume);
+        refresh.add(c);
       }
     }
+    ForkTelemetry.instance.recordStage(
+      opId: ForkTelemetry.instance.generateOpId(),
+      stage: TelemetryStage.resumeReconnect,
+      reconnectCount: reconnectCount,
+    );
     await Future.wait([
-      for (final c in probe)
+      for (final c in refresh)
         if (c.state == LinkState.online)
           c.refresh().timeout(probeTimeout).catchError((Object _) => c.reconnect())
         else

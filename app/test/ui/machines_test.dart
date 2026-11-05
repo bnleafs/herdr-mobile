@@ -247,7 +247,7 @@ void main() {
       expect(online.colorIn(ds), ds.textTertiary, reason: 'healthy is not news: no status colour');
 
       expect(dot('flaky').mark, LinkMark.ring, reason: 'reconnecting: not there yet');
-      expect(dot('flaky').colorIn(ds), ds.working);
+      expect(dot('flaky').colorIn(ds), ds.textTertiary, reason: 'reconnecting never uses ds.working');
       expect(dot('laptop').mark, LinkMark.ring, reason: 'offline');
       expect(dot('laptop').colorIn(ds), ds.textTertiary);
       expect(dot('sleepy').mark, LinkMark.ring, reason: 'switched off');

@@ -145,6 +145,9 @@ class QuickPhrases extends ChangeNotifier {
     await _set([..._phrases]..remove(phrase));
   }
 
+  /// Sets the entire list of phrases at once (cleaned, deduplicated and capped).
+  Future<void> setPhrases(Iterable<String> phrases) => _set(normalize(phrases));
+
   Future<void> _set(List<String> next) {
     _phrases = List.unmodifiable(next);
     notifyListeners();

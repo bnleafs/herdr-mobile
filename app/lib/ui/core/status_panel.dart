@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'press.dart';
@@ -189,5 +191,84 @@ class StatusStrip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// A quiet inline loading indicator for transient states (connecting, updating,
+/// reconnecting). It draws nothing for [delay] ([Dwell.connectGrace]) so a fast
+/// connect never flashes it, then draws a small, neutral inline row with no banner.
+/// The state is announced to assistive technologies immediately via [Semantics].
+class SubtleLoadingIndicator extends StatefulWidget {
+  const SubtleLoadingIndicator({super.key, required this.title, this.leading, this.delay = Dwell.connectGrace});
+
+  final String title;
+  final Widget? leading;
+  final Duration delay;
+
+  @override
+  State<SubtleLoadingIndicator> createState() => _SubtleLoadingIndicatorState();
+}
+
+class _SubtleLoadingIndicatorState extends State<SubtleLoadingIndicator> {
+  Timer? _timer;
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(SubtleLoadingIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.delay != widget.delay) {
+      _startTimer();
+    }
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    if (widget.delay == Duration.zero) {
+      _shown = true;
+      return;
+    }
+    _timer = Timer(widget.delay, () {
+      if (mounted) setState(() => _shown = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final child = !_shown
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Gap.lg, vertical: Gap.xs),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.leading != null) ...[
+                  ExcludeSemantics(child: widget.leading!),
+                  const SizedBox(width: Gap.xs),
+                ],
+                Flexible(
+                  child: Text(
+                    widget.title,
+                    style: Type.compact.copyWith(color: ds.textTertiary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+
+    return Semantics(liveRegion: true, label: widget.title, child: child);
   }
 }

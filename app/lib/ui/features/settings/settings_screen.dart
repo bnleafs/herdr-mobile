@@ -13,6 +13,7 @@ import '../../../data/repositories/terminal_settings.dart';
 import '../../../data/services/disk_cache.dart';
 import '../../../data/services/notifier.dart';
 import '../../../data/words/plural.dart';
+import '../../../fork/account/account_screen.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -103,6 +104,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   id: 'about',
                   child: _AboutGroup(update: update, open: _open == _Open.about, onToggle: () => _toggle(_Open.about)),
                 ),
+                const CustomRow(id: 'account', child: AccountGroup()),
                 GapRow(id: 'clearance', height: MediaQuery.paddingOf(context).bottom + Gap.xl),
               ],
             ),

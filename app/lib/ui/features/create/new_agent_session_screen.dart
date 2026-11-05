@@ -13,6 +13,7 @@ import '../../../data/repositories/machine_connection.dart';
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/place_name.dart';
 import '../../../fork/desk_native_sessions.dart';
+import '../../../fork/terminal_creation.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -23,7 +24,7 @@ import 'checkout_field.dart';
 import 'machine_field.dart';
 import 'new_agent_session_view_model.dart';
 import 'session_prefill.dart';
-import 'session_start_support.dart' show showStartedToast;
+import 'session_start_support.dart' show NewSessionError, showStartedToast;
 
 /// Opens the new-agent-session form, on [machine] when given. With [prefill]
 /// the form starts from a running session (a duplicate) instead.
@@ -72,6 +73,11 @@ class _FormState extends State<_Form> {
   final _folder = TextEditingController();
   final _branch = TextEditingController();
   late final NewAgentSessionViewModel _vm = context.read<NewAgentSessionViewModel>();
+  bool _isTerminal = false;
+  bool _terminalBusy = false;
+  NewSessionError? _terminalError;
+
+  bool get _canStart => _isTerminal ? (_vm.machine != null && _vm.machine!.isLive && !_terminalBusy) : _vm.canStart;
 
   /// Waits for typing in the folder field to pause before it asks the machine
   /// for the folder's checkouts, and what the text was when it last did.
@@ -177,6 +183,24 @@ class _FormState extends State<_Form> {
   Future<void> _start({required bool open}) async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
+    if (_isTerminal) {
+      final machine = _vm.machine;
+      if (machine == null || !machine.isLive) return;
+      setState(() => _opening = open);
+      await startTerminalFromForm(
+        context: context,
+        machine: machine,
+        cwd: _folder.text.trim(),
+        open: open,
+        onBusy: (busy) {
+          if (mounted) setState(() => _terminalBusy = busy);
+        },
+        onError: (error) {
+          if (mounted) setState(() => _terminalError = error);
+        },
+      );
+      return;
+    }
     final nav = Navigator.of(context);
     final toaster = Toaster.of(context);
     setState(() => _opening = open);
@@ -205,7 +229,7 @@ class _FormState extends State<_Form> {
         backgroundColor: ds.bg,
         body: CustomScrollView(
           slivers: [
-            SliverLargeTitle.back(title: 'New agent session'),
+            SliverLargeTitle.back(title: 'New session'),
             SliverFillRemaining(
               hasScrollBody: false,
               child: Padding(
@@ -237,11 +261,14 @@ class _FormState extends State<_Form> {
           Expanded(
             child: Form(
               key: _formKey,
-              onChanged: vm.dismissError,
+              onChanged: () {
+                vm.dismissError();
+                if (_terminalError != null) setState(() => _terminalError = null);
+              },
               child: CustomScrollView(
                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 slivers: [
-                  SliverLargeTitle.back(title: 'New agent session'),
+                  SliverLargeTitle.back(title: 'New session'),
                   SliverToBoxAdapter(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -268,7 +295,7 @@ class _FormState extends State<_Form> {
                                   textInputAction: TextInputAction.done,
                                   // Done on the keyboard is Start, as the button says.
                                   onSubmitted: (_) {
-                                    if (_vm.canStart) unawaited(_start(open: false));
+                                    if (_canStart) unawaited(_start(open: false));
                                   },
                                   validator: agentFolderError,
                                   suffix: machine == null || !machineSupportsFiles(machine)
@@ -288,7 +315,7 @@ class _FormState extends State<_Form> {
                                 // Only for a folder in a git repo; it glides in so what
                                 // is below does not jump.
                                 Collapse(
-                                  open: vm.checkouts != null,
+                                  open: !_isTerminal && vm.checkouts != null,
                                   child: ListenableBuilder(
                                     listenable: _folder,
                                     builder: (context, _) => Column(
@@ -338,18 +365,32 @@ class _FormState extends State<_Form> {
                         FormSection(
                           label: 'Agent',
                           endsWithField: false,
-                          children: [_AgentChips(vm: vm)],
+                          children: [
+                            _AgentChips(
+                              vm: vm,
+                              isTerminal: _isTerminal,
+                              onSelectTerminal: () => setState(() {
+                                _isTerminal = true;
+                                _terminalError = null;
+                              }),
+                              onSelectAgent: (id) => setState(() {
+                                _isTerminal = false;
+                                _terminalError = null;
+                              }),
+                            ),
+                          ],
                         ),
-                        ListRow(
-                          title: 'Past sessions',
-                          subtitle: 'Continue a conversation an agent kept',
-                          leading: Icon(LucideIcons.history, size: IconSize.lead, color: ds.textSecondary),
-                          trailing: Icon(LucideIcons.chevronRight, size: IconSize.row, color: ds.textTertiary),
-                          onTap: () {
-                            Haptics.tick();
-                            unawaited(openPastSessions(context, machine: machine, cwd: _folder.text));
-                          },
-                        ),
+                        if (!_isTerminal)
+                          ListRow(
+                            title: 'Past sessions',
+                            subtitle: 'Continue a conversation an agent kept',
+                            leading: Icon(LucideIcons.history, size: IconSize.lead, color: ds.textSecondary),
+                            trailing: Icon(LucideIcons.chevronRight, size: IconSize.row, color: ds.textTertiary),
+                            onTap: () {
+                              Haptics.tick();
+                              unawaited(openPastSessions(context, machine: machine, cwd: _folder.text));
+                            },
+                          ),
                         const SizedBox(height: Gap.xl),
                       ],
                     ),
@@ -358,7 +399,14 @@ class _FormState extends State<_Form> {
               ),
             ),
           ),
-          _StartBar(vm: vm, opening: _opening, onStart: vm.canStart ? _start : null),
+          _StartBar(
+            vm: vm,
+            opening: _opening,
+            onStart: _canStart ? _start : null,
+            isTerminal: _isTerminal,
+            terminalBusy: _terminalBusy,
+            terminalError: _terminalError,
+          ),
         ],
       ),
     );
@@ -368,9 +416,12 @@ class _FormState extends State<_Form> {
 /// The agents that have an ACP route. One the machine cannot run is dimmed and
 /// cannot be chosen; the line under the chips says why.
 class _AgentChips extends StatelessWidget {
-  const _AgentChips({required this.vm});
+  const _AgentChips({required this.vm, this.isTerminal = false, this.onSelectTerminal, this.onSelectAgent});
 
   final NewAgentSessionViewModel vm;
+  final bool isTerminal;
+  final VoidCallback? onSelectTerminal;
+  final ValueChanged<String>? onSelectAgent;
 
   @override
   Widget build(BuildContext context) {
@@ -386,60 +437,82 @@ class _AgentChips extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(spacing: Gap.sm, children: [for (final r in agentRoutes) _chip(r)]),
-        if (vm.checking)
-          Padding(
-            padding: const EdgeInsets.only(top: Gap.hair),
-            child: Text('Checking what is installed…', style: Type.caption.copyWith(color: ds.textMuted)),
-          ),
-        for (final reason in reasons)
-          Padding(
-            padding: const EdgeInsets.only(top: Gap.hair),
-            child: Text(
-              reason,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Type.caption.copyWith(color: ds.textSecondary),
+        Wrap(
+          spacing: Gap.sm,
+          children: [
+            for (final r in agentRoutes) _chip(r),
+            AppChip(label: 'Terminal', icon: LucideIcons.terminal, selected: isTerminal, onTap: onSelectTerminal),
+          ],
+        ),
+        if (!isTerminal) ...[
+          if (vm.checking)
+            Padding(
+              padding: const EdgeInsets.only(top: Gap.hair),
+              child: Text('Checking what is installed…', style: Type.caption.copyWith(color: ds.textMuted)),
             ),
-          ),
-        if (failure != null)
-          Padding(
-            padding: const EdgeInsets.only(top: Gap.hair),
-            child: Text(
-              failure,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Type.caption.copyWith(color: ds.dangerText),
+          for (final reason in reasons)
+            Padding(
+              padding: const EdgeInsets.only(top: Gap.hair),
+              child: Text(
+                reason,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Type.caption.copyWith(color: ds.textSecondary),
+              ),
             ),
-          ),
+          if (failure != null)
+            Padding(
+              padding: const EdgeInsets.only(top: Gap.hair),
+              child: Text(
+                failure,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Type.caption.copyWith(color: ds.dangerText),
+              ),
+            ),
+        ],
       ],
     );
   }
 
   Widget _chip(AgentRoute r) => AppChip(
     label: agentName(r.id),
-    selected: vm.agent == r.id,
+    selected: !isTerminal && vm.agent == r.id,
     enabled: vm.isAvailable(r.id) != false,
-    onTap: () => vm.selectAgent(r.id),
+    onTap: () {
+      if (vm.isAvailable(r.id) == false) return;
+      onSelectAgent?.call(r.id);
+      vm.selectAgent(r.id);
+    },
   );
 }
 
 /// The error (if any) and the Start buttons, pinned under the form.
 class _StartBar extends StatelessWidget {
-  const _StartBar({required this.vm, required this.opening, required this.onStart});
+  const _StartBar({
+    required this.vm,
+    required this.opening,
+    required this.onStart,
+    this.isTerminal = false,
+    this.terminalBusy = false,
+    this.terminalError,
+  });
 
   final NewAgentSessionViewModel vm;
 
   /// The start in flight (if any) was Start and open.
   final bool opening;
   final void Function({required bool open})? onStart;
+  final bool isTerminal;
+  final bool terminalBusy;
+  final NewSessionError? terminalError;
 
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
-    final error = vm.error;
+    final error = isTerminal ? terminalError : (terminalError ?? vm.error);
     final start = onStart;
-    final busy = vm.busy;
+    final busy = isTerminal ? terminalBusy : vm.busy;
     return FormActionBar(
       child: Column(
         mainAxisSize: MainAxisSize.min,

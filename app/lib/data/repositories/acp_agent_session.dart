@@ -28,6 +28,8 @@ import 'attach_target.dart' show AttachMode;
 import 'machine_connection.dart';
 import 'reviewed_state.dart';
 import 'subagent_transcripts.dart';
+import '../../fork/telemetry/envelope.dart';
+import '../../fork/telemetry/telemetry.dart';
 
 final _random = Random();
 
@@ -1154,7 +1156,7 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       if (!machine.isLive) return;
       _cancelRetry();
       _attempt = 0;
-      _retryTimer = Timer(_spread(_backoff(0)), () {
+      _retryTimer = Timer(Duration(milliseconds: _random.nextInt(201)), () {
         _retryTimer = null;
         if (epoch == _epoch) unawaited(_afterDrop(epoch, attachNow: true));
       });
@@ -1467,16 +1469,29 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     var started = false;
     var kept = false;
     _sentAt = _clock();
+    final stopwatch = Stopwatch()..start();
     final turn = _guard(client, () async {
       try {
         final result = await client.prompt(sid, blocks);
         kept = true;
+        ForkTelemetry.instance.recordStage(
+          opId: ForkTelemetry.instance.generateOpId(),
+          stage: TelemetryStage.messageDelivery,
+          durationMs: stopwatch.elapsedMilliseconds,
+          outcome: StageOutcome.success,
+        );
         if (_disposed || !identical(client, _client)) return null;
         if (result.stopReason == StopReason.endTurn && !_answered(before, client.state(sid))) {
           _setProblem(_silentTurn);
         }
         return null;
       } on AcpSessionBusyException {
+        ForkTelemetry.instance.recordStage(
+          opId: ForkTelemetry.instance.generateOpId(),
+          stage: TelemetryStage.messageDelivery,
+          durationMs: stopwatch.elapsedMilliseconds,
+          outcome: StageOutcome.failure,
+        );
         if (_disposed || !identical(client, _client)) return null;
         // Nothing was taken and nothing shows (the client took the row back):
         // the message waits, held.
@@ -1486,6 +1501,12 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
         _changed();
         return null;
       } on Object catch (e) {
+        ForkTelemetry.instance.recordStage(
+          opId: ForkTelemetry.instance.generateOpId(),
+          stage: TelemetryStage.messageDelivery,
+          durationMs: stopwatch.elapsedMilliseconds,
+          outcome: StageOutcome.failure,
+        );
         if (!started && !_disposed && identical(client, _client)) {
           // It never started (the agent takes no pictures, say): the text is
           // not lost, it waits held for the person to edit or drop.
@@ -1522,8 +1543,15 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
   /// was lost on the way (the reason in [error], or the link's own).
   Future<bool> _steer(AcpClient client, String sid, List<ContentBlock> blocks) async {
     bool current() => !_disposed && identical(client, _client);
+    final stopwatch = Stopwatch()..start();
     try {
       final outcome = await client.steer(sid, blocks);
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.messageDelivery,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: StageOutcome.success,
+      );
       final took = outcome == SteerOutcome.injected || outcome == SteerOutcome.startedNewTurn;
       // The link was re-made meanwhile: only what the agent took is kept.
       if (!current()) return took;
@@ -1541,14 +1569,32 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
       }
       return true;
     } on JsonRpcException catch (e) {
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.messageDelivery,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: StageOutcome.failure,
+      );
       if (!current()) return false;
       _holdRefused(blocks, _failure(e, client), fromAgent: !isAuthRequired(e));
       return true;
     } on AcpProtocolException catch (e) {
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.messageDelivery,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: StageOutcome.failure,
+      );
       if (!current()) return false;
       _holdRefused(blocks, e.message);
       return true;
     } on Object catch (e) {
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.messageDelivery,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: StageOutcome.failure,
+      );
       if (!current()) return false;
       // A dropped link is already said by [link].
       if (e is JsonRpcClosedException && !_ready) return false;

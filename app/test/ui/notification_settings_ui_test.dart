@@ -40,7 +40,7 @@ class _AskingNotifier extends NullNotifier {
 const _title = 'Notify me when an agent needs me';
 const _alsoTitle = 'Also when an agent finishes';
 const _blockedLine =
-    'Android is blocking notifications for herdr. '
+    'Android is blocking notifications for MegaWatt. '
     'Allow them in the system settings for this app.';
 
 Future<NotificationSettings> _pump(

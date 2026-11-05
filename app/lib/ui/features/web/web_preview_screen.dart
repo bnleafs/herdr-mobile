@@ -373,7 +373,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
         if (request.isMainFrame && _pending == request.url) {
           // A file: Android asks for it again instead of showing it.
           if (mounted) setState(() => _progress = 100);
-          _toaster.show('That link is a file, and herdr doesn’t download files. Open in browser (⋯) can.');
+          _toaster.show('That link is a file, and MegaWatt doesn’t download files. Open in browser (⋯) can.');
           return NavigationDecision.prevent;
         }
         if (request.isMainFrame) _pending = request.url;
@@ -428,7 +428,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
       _toaster.show('$where isn’t open on this phone.');
       return;
     }
-    _toaster.show('herdr doesn’t open ${visibleText(url.scheme)}: links from a page.');
+    _toaster.show('MegaWatt doesn’t open ${visibleText(url.scheme)}: links from a page.');
   }
 
   /// Another port of the machine, on the person's tap. Back from it returns
@@ -604,8 +604,7 @@ class _WebPreviewScreenState extends State<WebPreviewScreen> {
   String _why(WebResourceError error) {
     final machine = widget.machine.profile.label;
     return switch (error.errorType) {
-      WebResourceErrorType.connect =>
-        'herdr stopped serving it on this phone (after 10 minutes unused, or a new connection). Retry opens it again.',
+      WebResourceErrorType.connect => 'MegaWatt stopped serving it on this phone (after 10 minutes unused, or a new connection). Retry opens it again.',
       WebResourceErrorType.timeout => '$machine took too long to answer. Retry asks again.',
       WebResourceErrorType.io => 'The connection to $machine broke while the page loaded. Retry asks again.',
       WebResourceErrorType.redirectLoop => 'The page sends itself round in a loop. Retry asks again.',

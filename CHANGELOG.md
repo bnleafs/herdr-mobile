@@ -4,6 +4,35 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.55] - 2026-11-06
+
+### One New session form, MegaWatt everywhere, quieter loading, settings that follow your account
+
+- **One New session form**: the + opens New session directly. Terminal sits
+  beside Claude Code, Codex, pi and omp (Claude Code stays the default) and
+  uses the same machine and folder.
+- **MegaWatt**: the name is MegaWatt, and its icon replaces the old mark on the
+  empty board, the launch splash and notifications (a lightning bolt in the
+  status bar). Source code points at this fork.
+- **Quieter loading**: connecting and reconnecting show a small grey indicator,
+  and only when they take longer than a moment. Failures keep their strip;
+  amber means an agent is working.
+- **Faster back to work**: startup no longer waits for diagnostics, and a chat
+  reattaches within 0.2 s of its machine coming back instead of about a second.
+- **Settings follow your account**: look, agents, notifications, quick phrases
+  and update choices sync in the encrypted account vault and come back after
+  signing in on any phone.
+- **Diagnostics**: errors with stack traces, native crashes and freezes, UI
+  stalls, structured logs and timings (time to live, chat open, message
+  delivery, terminal creation) go to Sentry. Credentials and terminal or chat
+  text are scrubbed before sending.
+
+**Limitations & unverified scope**
+
+- Handset rendering of the icon, splash and notifications is unverified.
+- Settings sync is tested against fakes, not yet a live account round trip.
+- Requires Android 10 or newer.
+
 ## [0.1.54] - 2026-11-06
 
 ### Megawatt: new name and icon, terminals from the home +, automatic updates, and chat that survives Claude's trust prompt

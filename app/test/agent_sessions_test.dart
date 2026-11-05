@@ -1032,6 +1032,37 @@ void main() {
       expect(r.host.attachCalls, attaches + 1, reason: 'one try when the machine is back');
     });
 
+    _rigTest(
+      'reattach after machine return happens within the 0-200 ms jitter bound and repeated failures still back off',
+      (r) {
+        r.connect();
+        final initialAttaches = r.host.attachCalls;
+
+        r.host.attachFailures.add(const AgentHostException('down1'));
+        r.host.attachFailures.add(const AgentHostException('down2'));
+
+        r.machine.goOffline();
+        r.keeper.dropLink();
+        r.pump();
+        expect(r.session.link, AgentLink.reconnecting);
+
+        r.machine.reconnect();
+        r.async.flushMicrotasks();
+        expect(r.machine.isLive, isTrue);
+
+        // Within the 200 ms jitter bound, first reattach attempt fires
+        r.async.elapse(const Duration(milliseconds: 200));
+        expect(r.host.attachCalls, initialAttaches + 1, reason: 'first try fired within 200 ms jitter');
+
+        // First attempt failed. The second attempt must back off (1 s * jitter = 1000 ms)
+        r.async.elapse(const Duration(milliseconds: 700));
+        expect(r.host.attachCalls, initialAttaches + 1, reason: 'repeated failure still backs off before 1 s');
+
+        r.async.elapse(const Duration(milliseconds: 400));
+        expect(r.host.attachCalls, initialAttaches + 2, reason: 'second attempt fires after backoff');
+      },
+    );
+
     _rigTest('the delays are spread by the jitter, so sessions that lost the link together do not knock together', (r) {
       r.connect();
       r.jitterFactor = 0.8;

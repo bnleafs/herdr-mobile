@@ -14,6 +14,7 @@ import '../../../data/services/disk_cache.dart';
 import '../../../data/services/notifier.dart';
 import '../../../data/words/plural.dart';
 import '../../../fork/account/account_screen.dart';
+import '../../../fork/telemetry/telemetry.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -334,7 +335,7 @@ class _NotificationsGroupState extends State<_NotificationsGroup> {
                 icon: HerdrIcons.notificationsOff,
                 liveRegion: true,
                 message:
-                    'Android is blocking notifications for herdr. '
+                    'Android is blocking notifications for MegaWatt. '
                     'Allow them in the system settings for this app.',
               ),
             ),
@@ -355,7 +356,7 @@ class _NotificationsGroupState extends State<_NotificationsGroup> {
         const NoteRow(
           id: 'watching',
           text:
-              'While agents work, or a page from a machine is open, herdr keeps a quiet '
+              'While agents work, or a page from a machine is open, MegaWatt keeps a quiet '
               '\u201cWatching\u201d notice so Android keeps the connection alive. '
               'Notifications clear when you open the app.',
         ),
@@ -462,13 +463,13 @@ class _AboutGroup extends StatelessWidget {
   final bool open;
   final VoidCallback onToggle;
 
-  static const _repoLabel = 'github.com/tuan3w/herdr-mobile · GPL-3.0';
+  static const _repoLabel = 'github.com/$appRepository · GPL-3.0';
 
   /// The notice GPL-3.0 section 5(d) asks an interactive program to show.
   static const _legalese =
-      'Copyright © 2026 Tuan Nguyen. herdr mobile is free '
+      'Copyright © 2026 Tuan Nguyen. MegaWatt is free '
       'software under the GNU General Public License v3.0, and comes with no '
-      'warranty. Its source is at github.com/tuan3w/herdr-mobile.';
+      'warranty. Its source is at github.com/$appRepository.';
 
   Future<void> _openRepo(BuildContext context) async {
     final toaster = Toaster.of(context);
@@ -479,7 +480,7 @@ class _AboutGroup extends StatelessWidget {
 
   void _openLicenses(BuildContext context) => showLicensePage(
     context: context,
-    applicationName: 'herdr mobile',
+    applicationName: 'MegaWatt',
     applicationVersion: appVersion,
     applicationLegalese: _legalese,
   );
@@ -510,12 +511,7 @@ class _AboutGroup extends StatelessWidget {
           title: 'Connection',
           titleMaxLines: 1,
           subtitleMaxLines: 8,
-          subtitle: update == null
-              ? 'Talks to herdr over SSH and sends nothing anywhere else. '
-                    'Dictation uses your phone’s own speech service.'
-              : 'Talks to herdr over SSH. The only other place it contacts is GitHub, '
-                    'to look for a new version and, when you tap Download, to fetch it. '
-                    'Dictation uses your phone’s own speech service.',
+          subtitle: connectionSubtitle(update),
         ),
         EntityRow(
           id: 'whatsnew',
@@ -606,4 +602,34 @@ class _UpdateRows extends StatelessWidget {
       );
     },
   );
+}
+
+@visibleForTesting
+String connectionSubtitle(AppUpdate? update) {
+  final telemetry = ForkTelemetry.instance;
+  if (!telemetry.isConfigured) {
+    return update == null
+        ? 'Talks to herdr over SSH and sends nothing anywhere else. '
+              'Dictation uses your phone’s own speech service.'
+        : 'Talks to herdr over SSH. The only other place it contacts is GitHub, '
+              'to look for a new version and, when you tap Download, to fetch it. '
+              'Dictation uses your phone’s own speech service.';
+  }
+
+  final destinations = [if (telemetry.hasSentry) 'Sentry', if (telemetry.hasPostHog) 'PostHog'].join(' and ');
+
+  final diag =
+      'It also sends diagnostics (errors, timings, logs; '
+      'credentials and terminal/chat text scrubbed) to $destinations. ';
+
+  if (update == null) {
+    return 'Talks to herdr over SSH. '
+        '$diag'
+        'Dictation uses your phone’s own speech service.';
+  }
+
+  return 'Talks to herdr over SSH. '
+      'It contacts GitHub to look for a new version and, when you tap Download, to fetch it. '
+      '$diag'
+      'Dictation uses your phone’s own speech service.';
 }

@@ -912,6 +912,14 @@ class _BannerState extends State<_Banner> {
     );
     final readError = context.select<PaneViewModel, String?>((v) => v.error);
 
+    if (link.error == null && (link.state == LinkState.connecting || link.state == LinkState.reconnecting)) {
+      return SubtleLoadingIndicator(
+        key: ValueKey(link.state.label),
+        title: link.state.label,
+        leading: LinkDot(state: link.state),
+      );
+    }
+
     final _Problem? problem;
     if (link.state != LinkState.online) {
       problem = _Problem(

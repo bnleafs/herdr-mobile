@@ -235,7 +235,7 @@ class DeepLinks with WidgetsBindingObserver {
     final chat = pane == null ? parseSessionLink(route) : null;
     final machineName = pane?.machine ?? chat?.machine;
     if (machineName == null) {
-      _say("That link isn’t one herdr can open.", next: HomePage.agents);
+      _say("That link isn’t one MegaWatt can open.", next: HomePage.agents);
       return;
     }
     final profile = matchMachine(machines.machines, machineName);
@@ -264,7 +264,7 @@ class DeepLinks with WidgetsBindingObserver {
       final key = sessionKey = '${profile.id}/${chat!.keeperId}';
       final list = sessions;
       if (list == null) {
-        _say("That link isn’t one herdr can open.", next: HomePage.agents);
+        _say("That link isn’t one MegaWatt can open.", next: HomePage.agents);
         return;
       }
       var first = await _present(connection, () => list.byKey(key) != null);

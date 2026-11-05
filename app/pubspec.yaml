@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Android versionCode is the number after '+'. It must only ever increase and
 # must stay above 5036: development builds before the public 0.1.0 reached
 # 5036, and a lower code is refused as a downgrade by phones that have one.
-version: 0.1.54+5091
+version: 0.1.55+5092
 
 environment:
   sdk: ^3.13.5
@@ -125,6 +125,7 @@ flutter:
     - assets/CHANGELOG.md
     # The licence of the symbol fallback font, shown in Settings > About > Licences.
     - assets/fonts/HerdrSymbols-OFL.txt
+    - assets/icon/icon.png
 
   fonts:
     - family: Inter
@@ -187,10 +188,9 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# The source PNGs and the notification icon are rendered from
-# lib/ui/core/brand_mark.dart by screenshot_test/brand_assets_test.dart (see
-# its header); this cuts the platform sizes. The background is Ds.ink.bg. No
-# foreground inset: the mark already sits inside the adaptive safe circle.
+# The source PNGs and the notification icon are in assets/icon/ and
+# res/drawable/; flutter_launcher_icons cuts the platform sizes. The background
+# is Ds.ink.bg. No foreground inset: the mark already sits inside the adaptive safe circle.
 flutter_launcher_icons:
   android: true
   ios: true

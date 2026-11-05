@@ -5,9 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:herdr_mobile/data/app_info.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'envelope.dart';
 import 'queue.dart';
+import 'scrubber.dart';
+import 'session_tracker.dart';
+import 'stall_detector.dart';
 
 /// Testable sink interface for sending sanitized telemetry to external providers.
 abstract interface class TelemetrySink {
@@ -20,24 +24,64 @@ abstract interface class TelemetrySink {
 
 const _megawattMark = 'megawatt';
 
-/// Fail-closed filter: keep only breadcrumbs this sink added itself.
+/// Deny-list scrubber and allow-list filter for breadcrumbs.
+/// Keeps Megawatt milestones, navigation breadcrumbs (route names only), and GitHub HTTP breadcrumbs.
 @visibleForTesting
-Breadcrumb? megawattBeforeBreadcrumb(Breadcrumb? breadcrumb, Hint hint) =>
-    breadcrumb?.type == _megawattMark ? breadcrumb : null;
+Breadcrumb? megawattBeforeBreadcrumb(Breadcrumb? breadcrumb, Hint hint) {
+  if (breadcrumb == null) return null;
+  final isMegawatt = breadcrumb.type == _megawattMark;
+  final isNav = breadcrumb.category == 'navigation';
+  final isHttp = breadcrumb.category == 'http' || breadcrumb.type == 'http';
 
-/// Fail-closed filter: keep only events built in [SentryTelemetrySink.sendError].
+  if (!isMegawatt && !isNav && !isHttp) {
+    return null;
+  }
+
+  // Filter HTTP breadcrumbs to GitHub update requests
+  if (isHttp) {
+    final urlStr = breadcrumb.data?['url']?.toString() ?? '';
+    if (!urlStr.contains('github.com') && !urlStr.contains('githubusercontent.com')) {
+      return null;
+    }
+  }
+
+  // Navigation breadcrumbs: preserve route names only, drop arguments/state
+  if (isNav && breadcrumb.data != null) {
+    breadcrumb.data!.remove('fromArgs');
+    breadcrumb.data!.remove('toArgs');
+    breadcrumb.data!.remove('arguments');
+    breadcrumb.data!.remove('state');
+  }
+
+  return megawattScrubber.scrubBreadcrumb(breadcrumb);
+}
+
+/// Deny-list scrubber for Sentry events.
+/// Scrubs credentials and sensitive text while preserving real exceptions and stack traces.
 @visibleForTesting
-SentryEvent? megawattBeforeSend(SentryEvent event, Hint hint) => event.tags?['source'] == _megawattMark ? event : null;
+SentryEvent? megawattBeforeSend(SentryEvent event, Hint hint) => megawattScrubber.scrubEvent(event);
 
-/// Sentry adapter: manual sanitized error envelopes and bounded enum breadcrumbs only.
-///
-/// Native crash integration, automatic raw Dart error handlers, session replay,
-/// screenshots, view hierarchy, and auto HTTP breadcrumbs are strictly disabled/removed.
+/// Allow-list filter and deny-list scrubber for Sentry logs.
+/// Drops any log not marked as Megawatt; scrubs credentials from allowed logs.
+@visibleForTesting
+SentryLog? megawattBeforeSendLog(SentryLog log, Hint hint) {
+  if (log.attributes['source']?.value != _megawattMark) {
+    return null;
+  }
+  return megawattScrubber.scrubLog(log);
+}
+
+/// Sentry adapter: structured logs, timing distribution metrics, and native crash/error capture.
 class SentryTelemetrySink implements TelemetrySink {
-  SentryTelemetrySink({required this.dsn});
+  SentryTelemetrySink({required this.dsn, String? installId}) : _installId = installId ?? 'uninitialized';
 
   final String dsn;
+  String _installId;
   bool _initialized = false;
+
+  void setInstallId(String id) {
+    _installId = id;
+  }
 
   @override
   Future<void> init() async {
@@ -45,35 +89,33 @@ class SentryTelemetrySink implements TelemetrySink {
     try {
       await SentryFlutter.init((options) {
         options.dsn = dsn;
-        options.enableNativeCrashHandling = false;
-        options.enableAutoNativeBreadcrumbs = false;
-        options.enableAppLifecycleBreadcrumbs = false;
-        options.enableWatchdogTerminationTracking = false;
+        options.enableNativeCrashHandling = true;
+        options.anrEnabled = true;
+        options.environment = 'release';
+        options.release = '$appVersion+${TelemetryEnvelope.defaultBuild}';
+        options.dist = '${TelemetryEnvelope.defaultBuild}';
         options.attachScreenshot = false;
         options.attachViewHierarchy = false;
-        options.sendDefaultPii = false;
-        options.recordHttpBreadcrumbs = false;
-        options.captureFailedRequests = false;
-        options.enableAutoSessionTracking = false;
-        options.enableAutoPerformanceTracing = false;
+        options.replay.sessionSampleRate = 0;
+        options.replay.onErrorSampleRate = 0;
+        options.recordHttpBreadcrumbs = true;
         options.beforeBreadcrumb = megawattBeforeBreadcrumb;
         options.beforeSend = megawattBeforeSend;
+        options.beforeSendLog = megawattBeforeSendLog;
 
-        // Remove all auto-capturing or unsafe integrations
+        // Remove screenshot, view hierarchy and session replay integrations
         for (final i in List<Integration>.from(options.integrations)) {
           final name = i.runtimeType.toString();
-          if (name.contains('FlutterError') ||
-              name.contains('OnError') ||
-              name.contains('DebugPrint') ||
-              name.contains('Connectivity') ||
-              name.contains('Screenshot') ||
-              name.contains('ViewHierarchy') ||
-              name.contains('Replay')) {
+          if (name.contains('Screenshot') || name.contains('ViewHierarchy') || name.contains('Replay')) {
             options.removeIntegration(i);
           }
         }
       }).timeout(const Duration(seconds: 3));
       _initialized = true;
+      await Sentry.configureScope((scope) {
+        scope.setUser(SentryUser(id: 'jaya'));
+        scope.setTag('install_id', _installId);
+      });
     } catch (_) {
       // Isolate SDK initialization errors: never disrupt app boot
     }
@@ -83,12 +125,99 @@ class SentryTelemetrySink implements TelemetrySink {
   Future<void> sendMilestone(TelemetryEnvelope envelope) async {
     if (!_initialized) return;
     try {
+      // 1. Structured Sentry Log
+      final level = switch (envelope.stage) {
+        TelemetryStage.error => SentryLogLevel.error,
+        TelemetryStage.fallback || TelemetryStage.userRetry || TelemetryStage.uiStall => SentryLogLevel.warn,
+        _ when envelope.category != TelemetryCategory.none => SentryLogLevel.warn,
+        _ => SentryLogLevel.info,
+      };
+
+      final attributes = <String, SentryAttribute>{
+        'source': SentryAttribute.string(_megawattMark),
+        'stage': SentryAttribute.string(envelope.stage.name),
+        'category': SentryAttribute.string(envelope.category.name),
+        'opId': SentryAttribute.string(envelope.opId),
+        'release': SentryAttribute.string(envelope.release),
+        'build': SentryAttribute.int(envelope.build),
+        'platform': SentryAttribute.string(envelope.platform.name),
+        if (envelope.durationMs != null) 'durationMs': SentryAttribute.int(envelope.durationMs!),
+        if (envelope.attempt != null) 'attempt': SentryAttribute.int(envelope.attempt!),
+        if (envelope.retryable != null) 'retryable': SentryAttribute.bool(envelope.retryable!),
+        if (envelope.transportKind != null) 'transportKind': SentryAttribute.string(envelope.transportKind!),
+        if (envelope.connectPath != null) 'connectPath': SentryAttribute.string(envelope.connectPath!.name),
+        if (envelope.outcome != null) 'outcome': SentryAttribute.string(envelope.outcome!.name),
+        if (envelope.reconnectCount != null) 'reconnectCount': SentryAttribute.int(envelope.reconnectCount!),
+        if (envelope.uiStallMs != null) 'uiStallMs': SentryAttribute.int(envelope.uiStallMs!),
+        if (envelope.machineLabel != null) 'machineLabel': SentryAttribute.string(envelope.machineLabel!),
+        if (envelope.agentKind != null) 'agentKind': SentryAttribute.string(envelope.agentKind!),
+        if (envelope.routeName != null) 'routeName': SentryAttribute.string(envelope.routeName!),
+        if (envelope.errorString != null) 'errorString': SentryAttribute.string(envelope.errorString!),
+        if (envelope.sessionLengthBucket != null)
+          'sessionLengthBucket': SentryAttribute.string(envelope.sessionLengthBucket!),
+        if (envelope.foregroundCount != null) 'foregroundCount': SentryAttribute.int(envelope.foregroundCount!),
+        if (envelope.backgroundCount != null) 'backgroundCount': SentryAttribute.int(envelope.backgroundCount!),
+      };
+
+      switch (level) {
+        case SentryLogLevel.info:
+          Sentry.logger.info(envelope.stage.name, attributes: attributes);
+        case SentryLogLevel.warn:
+          Sentry.logger.warn(envelope.stage.name, attributes: attributes);
+        case SentryLogLevel.error:
+          Sentry.logger.error(envelope.stage.name, attributes: attributes);
+        default:
+          Sentry.logger.info(envelope.stage.name, attributes: attributes);
+      }
+
+      // 2. Sentry Distribution Metrics for durations
+      if (envelope.durationMs != null) {
+        final metricTags = <String, SentryAttribute>{
+          'stage': SentryAttribute.string(envelope.stage.name),
+          'category': SentryAttribute.string(envelope.category.name),
+          if (envelope.connectPath != null) 'connectPath': SentryAttribute.string(envelope.connectPath!.name),
+          if (envelope.outcome != null) 'outcome': SentryAttribute.string(envelope.outcome!.name),
+        };
+        Sentry.metrics.distribution(
+          'megawatt.${envelope.stage.name}_ms',
+          envelope.durationMs!,
+          unit: SentryMetricUnit.millisecond,
+          attributes: metricTags,
+        );
+      }
+
+      // 3. Sentry Counts for anomalies
+      final isAnomaly =
+          envelope.stage == TelemetryStage.fallback ||
+          envelope.stage == TelemetryStage.userRetry ||
+          envelope.stage == TelemetryStage.uiStall ||
+          envelope.stage == TelemetryStage.error ||
+          envelope.outcome == StageOutcome.failure ||
+          envelope.category != TelemetryCategory.none;
+      if (isAnomaly) {
+        Sentry.metrics.count(
+          'megawatt.anomaly',
+          1,
+          attributes: {
+            'stage': SentryAttribute.string(envelope.stage.name),
+            'category': SentryAttribute.string(envelope.category.name),
+          },
+        );
+      }
+
+      // 4. Breadcrumb
       await Sentry.addBreadcrumb(
         Breadcrumb(
           type: _megawattMark,
           message: envelope.stage.name,
           category: envelope.category.name,
-          data: {'opId': envelope.opId},
+          data: {
+            'opId': envelope.opId,
+            if (envelope.durationMs != null) 'durationMs': envelope.durationMs,
+            if (envelope.outcome != null) 'outcome': envelope.outcome!.name,
+            if (envelope.machineLabel != null) 'machineLabel': envelope.machineLabel,
+            if (envelope.agentKind != null) 'agentKind': envelope.agentKind,
+          },
           timestamp: envelope.timestamp,
         ),
       );
@@ -98,9 +227,16 @@ class SentryTelemetrySink implements TelemetrySink {
   @override
   Future<void> sendError(TelemetryEnvelope envelope) async {
     if (!_initialized) return;
+    // Prevent duplicate capture of FlutterError.onError events already caught by FlutterErrorIntegration
+    if (envelope.stage == TelemetryStage.error && envelope.opId.startsWith('flutter_err_')) {
+      return;
+    }
     try {
+      // Also emit structured Sentry log, metric distribution/count, and breadcrumb
+      await sendMilestone(envelope);
+
       final sentryEvent = SentryEvent(
-        message: SentryMessage(envelope.category.name),
+        message: SentryMessage(envelope.errorString ?? envelope.category.name),
         level: SentryLevel.error,
         tags: {
           'source': _megawattMark,
@@ -109,6 +245,8 @@ class SentryTelemetrySink implements TelemetrySink {
           'opId': envelope.opId,
           'platform': envelope.platform.name,
           if (envelope.transportKind != null) 'transportKind': envelope.transportKind!,
+          if (envelope.machineLabel != null) 'machineLabel': envelope.machineLabel!,
+          if (envelope.agentKind != null) 'agentKind': envelope.agentKind!,
         },
         timestamp: envelope.timestamp,
       );
@@ -134,10 +272,7 @@ class SentryTelemetrySink implements TelemetrySink {
   }
 }
 
-/// PostHog adapter: explicit milestone events only.
-///
-/// All session replay, UI screenshots, surveys, autocapture, and person profiles
-/// are strictly disabled.
+/// PostHog adapter: milestone events and errors with rich properties.
 class PostHogTelemetrySink implements TelemetrySink {
   PostHogTelemetrySink({required this.apiKey, required this.host});
 
@@ -208,24 +343,20 @@ class PostHogTelemetrySink implements TelemetrySink {
   }
 }
 
-/// Main privacy-bounded telemetry module for Megawatt fork.
-///
-/// Features:
-/// - Allowlisted schema ONLY (no `Map<String, dynamic>` public sink, no freeform message).
-/// - Missing compile-time provider config leaves telemetry completely disabled.
-/// - In-memory bounded queue (100 capacity, 24h TTL, 30/minute rate limiter).
-/// - Random anonymous launch ID and short operation IDs.
-/// - Complete failure isolation: vendor timeouts or exceptions never disrupt the app.
+/// Main observability module for Megawatt fork.
 class ForkTelemetry {
   ForkTelemetry._({
     required this._sinks,
     TelemetryQueue? queue,
     required this._enabled,
     required this._isConfigured,
+    String? installId,
     DateTime Function()? clock,
   }) : _queue = queue ?? TelemetryQueue(clock: clock),
        _clock = clock ?? DateTime.now,
-       _anonymousLaunchId = _generateHex(16);
+       _installId = installId ?? _generateHex(16),
+       stallDetector = UiStallDetector(clock: clock),
+       sessionTracker = AppSessionTracker(clock: clock);
 
   /// Creates a telemetry instance configured from compile-time environment variables.
   factory ForkTelemetry.fromEnvironment({
@@ -257,8 +388,24 @@ class ForkTelemetry {
     required List<TelemetrySink> sinks,
     TelemetryQueue? queue,
     bool enabled = true,
+    bool preInitialized = true,
+    String? installId,
     DateTime Function()? clock,
-  }) => ForkTelemetry._(sinks: sinks, queue: queue, enabled: enabled, isConfigured: sinks.isNotEmpty, clock: clock);
+  }) {
+    final t = ForkTelemetry._(
+      sinks: sinks,
+      queue: queue,
+      enabled: enabled,
+      isConfigured: sinks.isNotEmpty,
+      installId: installId,
+      clock: clock,
+    );
+    if (preInitialized) {
+      t._readySinks.addAll(sinks);
+      t._initialized = true;
+    }
+    return t;
+  }
 
   static ForkTelemetry? _instance;
 
@@ -276,37 +423,87 @@ class ForkTelemetry {
   }
 
   final List<TelemetrySink> _sinks;
+  final Set<TelemetrySink> _readySinks = {};
   final TelemetryQueue _queue;
   final bool _isConfigured;
   final DateTime Function() _clock;
-  final String _anonymousLaunchId;
+  String _installId;
+
+  final UiStallDetector stallDetector;
+  final AppSessionTracker sessionTracker;
 
   bool _enabled;
   bool _initialized = false;
+  Future<void>? _initFuture;
 
   bool get isEnabled => _enabled;
   bool get isConfigured => _isConfigured;
+  bool get hasSentry => _sinks.any((s) => s is SentryTelemetrySink);
+  bool get hasPostHog => _sinks.any((s) => s is PostHogTelemetrySink);
   int get queuedCount => _queue.length;
-  String get anonymousLaunchId => _anonymousLaunchId;
+  String get installId => _installId;
 
-  /// Initializes configured provider sinks. Idempotent and never throws.
-  Future<void> init() async {
-    if (_initialized || !_enabled) return;
-    for (final sink in _sinks) {
-      await sink.init();
+  /// Initializes configured provider sinks concurrently.
+  Future<void> init() {
+    if (_initialized || !_enabled) return Future.value();
+    return _initFuture ??= _doInit();
+  }
+
+  Future<void> _doInit() async {
+    try {
+      await _loadInstallId();
+      for (final sink in _sinks) {
+        if (sink is SentryTelemetrySink) {
+          sink.setInstallId(_installId);
+        }
+      }
+      stallDetector.start();
+      await Future.wait(_sinks.map(_initSink));
+    } catch (_) {
+      // Errors stay isolated
+    } finally {
+      _initialized = true;
     }
-    _initialized = true;
+  }
+
+  Future<void> _loadInstallId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString('megawatt_install_id');
+      if (stored != null && stored.isNotEmpty) {
+        _installId = stored;
+      } else {
+        await prefs.setString('megawatt_install_id', _installId);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _initSink(TelemetrySink sink) async {
+    try {
+      await sink.init();
+      if (!_enabled) return;
+      final pending = List<TelemetryEnvelope>.from(_queue.items);
+      _readySinks.add(sink);
+      for (final envelope in pending) {
+        if (envelope.event == 'error') {
+          sink.sendError(envelope).ignore();
+        } else {
+          sink.sendMilestone(envelope).ignore();
+        }
+      }
+    } catch (_) {
+      // Isolate SDK initialization errors: never disrupt app boot
+    }
   }
 
   /// Changes the telemetry opt-in state at runtime.
-  ///
-  /// Disabling clears all queued events and instructs active sinks to reset
-  /// identity and pending dispatches.
   void setEnabled(bool enabled) {
     if (_enabled == enabled) return;
     _enabled = enabled;
     if (!_enabled) {
       _queue.clear();
+      _readySinks.clear();
+      stallDetector.stop();
       for (final sink in _sinks) {
         sink.reset().ignore();
       }
@@ -316,7 +513,6 @@ class ForkTelemetry {
   }
 
   /// Generates a random 16-character hex operation ID.
-  /// Never hashes machine names, pane IDs, or paths.
   String generateOpId() => _generateHex(16);
 
   /// Records a typed lifecycle stage transition.
@@ -327,7 +523,18 @@ class ForkTelemetry {
     int? attempt,
     int? durationMs,
     String? transportKind,
+    ConnectPath? connectPath,
     bool? retryable,
+    StageOutcome? outcome,
+    int? reconnectCount,
+    int? uiStallMs,
+    String? machineLabel,
+    String? agentKind,
+    String? routeName,
+    String? errorString,
+    String? sessionLengthBucket,
+    int? foregroundCount,
+    int? backgroundCount,
   }) {
     if (!_enabled) return;
     final envelope = TelemetryEnvelope(
@@ -338,22 +545,32 @@ class ForkTelemetry {
       timestamp: _clock(),
       attempt: attempt,
       durationMs: durationMs,
-      transportKind: transportKind,
+      transportKind: transportKind ?? connectPath?.name,
+      connectPath: connectPath,
       retryable: retryable,
       platform: _currentPlatform(),
       release: appVersion,
+      outcome: outcome,
+      reconnectCount: reconnectCount,
+      uiStallMs: uiStallMs,
+      machineLabel: machineLabel,
+      agentKind: agentKind,
+      routeName: routeName,
+      errorString: errorString,
+      sessionLengthBucket: sessionLengthBucket,
+      foregroundCount: foregroundCount,
+      backgroundCount: backgroundCount,
+      installId: _installId,
     );
 
     if (_queue.enqueue(envelope)) {
-      for (final sink in _sinks) {
+      for (final sink in _readySinks) {
         sink.sendMilestone(envelope).ignore();
       }
     }
   }
 
-  /// Records an operation failure as a sanitized, constant-category error envelope.
-  ///
-  /// The raw [error] object and its message are NEVER transmitted or queued.
+  /// Records an operation failure as a rich, scrubbed error envelope.
   void recordError({
     required String opId,
     required TelemetryStage stage,
@@ -362,11 +579,17 @@ class ForkTelemetry {
     int? attempt,
     int? durationMs,
     String? transportKind,
+    ConnectPath? connectPath,
     bool? retryable,
+    StageOutcome? outcome,
+    String? machineLabel,
+    String? agentKind,
+    String? routeName,
   }) {
     if (!_enabled) return;
     final category = classifyError(error);
     final sanitizedStack = sanitizeStackTrace(stackTrace);
+    final scrubbedError = megawattScrubber.scrubText(error.toString());
 
     final envelope = TelemetryEnvelope(
       event: 'error',
@@ -376,26 +599,33 @@ class ForkTelemetry {
       timestamp: _clock(),
       attempt: attempt,
       durationMs: durationMs,
-      transportKind: transportKind,
+      transportKind: transportKind ?? connectPath?.name,
+      connectPath: connectPath,
       retryable: retryable,
       platform: _currentPlatform(),
       release: appVersion,
       stackTrace: sanitizedStack,
+      outcome: outcome ?? StageOutcome.failure,
+      machineLabel: machineLabel,
+      agentKind: agentKind,
+      routeName: routeName,
+      errorString: scrubbedError,
+      installId: _installId,
     );
 
     if (_queue.enqueue(envelope)) {
-      for (final sink in _sinks) {
+      for (final sink in _readySinks) {
         sink.sendError(envelope).ignore();
       }
     }
   }
 
-  /// Hook for Flutter framework errors. Builds a sanitized error envelope.
+  /// Hook for Flutter framework errors.
   void recordFlutterError(FlutterErrorDetails details) {
     if (!_enabled) return;
     try {
       recordError(
-        opId: generateOpId(),
+        opId: 'flutter_err_${generateOpId()}',
         stage: TelemetryStage.error,
         error: details.exception,
         stackTrace: details.stack,

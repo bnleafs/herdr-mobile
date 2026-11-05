@@ -9,7 +9,10 @@ import '../words/plural.dart';
 import 'notifier.dart';
 
 /// The drawable in `android/app/src/main/res/drawable`, kept by `raw/keep.xml`.
-const _smallIcon = 'ic_stat_herdr';
+const _smallIcon = 'ic_stat_megawatt';
+
+/// The large icon in notifications, kept by `raw/keep.xml`.
+const _largeIcon = DrawableResourceAndroidBitmap('ic_megawatt_large');
 
 const _needsYouChannel = AndroidNotificationChannel(
   'needs_you',
@@ -73,6 +76,7 @@ AndroidNotificationDetails _details(
   playSound: channel.playSound,
   enableVibration: channel.enableVibration,
   icon: _smallIcon,
+  largeIcon: _largeIcon,
   color: accent,
   groupKey: 'agents',
   autoCancel: true,
@@ -268,6 +272,7 @@ class LocalNotifier implements Notifier {
           autoCancel: false,
           onlyAlertOnce: true,
           icon: _smallIcon,
+          largeIcon: _largeIcon,
           color: _accent,
         ),
         // A killed process must not leave a notice behind that nothing backs.

@@ -130,7 +130,7 @@ class _GalleryTabState extends State<GalleryTab> with WidgetsBindingObserver {
         GalleryAccess.unavailable => _Panel(
           icon: HerdrIcons.pictureOff,
           title: 'Photos can’t be listed',
-          message: 'This phone would not show its library to herdr. The system picker still works.',
+          message: 'This phone would not show its library to MegaWatt. The system picker still works.',
           onCamera: widget.onCamera,
           onSystemPicker: widget.onSystemPicker,
         ),
@@ -174,7 +174,7 @@ class _Header extends StatelessWidget {
               const SizedBox(width: Gap.sm),
               AppChip(
                 label: 'Manage',
-                semanticLabel: 'Manage which photos herdr can see',
+                semanticLabel: 'Manage which photos MegaWatt can see',
                 leading: Icon(LucideIcons.slidersHorizontal, size: IconSize.inline, color: ds.textSecondary),
                 onTap: () => unawaited(model.manage()),
               ),

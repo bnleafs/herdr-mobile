@@ -2,74 +2,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
-Widget _app({bool reduced = false}) => MaterialApp(
+Widget _app({bool reduced = false, bool animate = true}) => MaterialApp(
   builder: (context, child) => MediaQuery(
     data: MediaQuery.of(context).copyWith(disableAnimations: reduced),
     child: child!,
   ),
-  home: const Center(child: BrandMark()),
+  home: Center(child: BrandMark(animate: animate)),
 );
 
-Finder get _paint => find.descendant(of: find.byType(BrandMark), matching: find.byType(CustomPaint));
+Finder get _image => find.descendant(of: find.byType(BrandMark), matching: find.byType(Image));
 
 void main() {
-  testWidgets('draws the crook, then the shoulder, then the dot lands, once, and stops', (tester) async {
+  testWidgets('renders MegaWatt icon image asset with semantic label and animates in', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();
-    expect(_paint, paints..rrect(), reason: 'the tile is there from the first frame');
-    expect(
-      _paint,
-      isNot(
-        paints
-          ..rrect()
-          ..path(),
-      ),
-      reason: 'nothing of the mark at the first frame',
-    );
 
-    await tester.pump(const Duration(milliseconds: 40));
-    expect(
-      _paint,
-      paints
-        ..rrect()
-        ..path(),
-      reason: 'the stem starts rising',
-    );
-    expect(
-      _paint,
-      isNot(
-        paints
-          ..rrect()
-          ..path()
-          ..path(),
-      ),
-      reason: 'the shoulder waits for the crook',
-    );
-    expect(_paint, isNot(paints..circle()), reason: 'the dot lands last');
+    expect(_image, findsOneWidget);
+    final image = tester.widget<Image>(_image);
+    expect((image.image as AssetImage).assetName, 'assets/icon/icon.png');
+    expect(image.semanticLabel, 'MegaWatt');
+
+    // FadeTransition starts fading in
+    final fadeFinder = find.descendant(of: find.byType(BrandMark), matching: find.byType(FadeTransition));
+    expect(fadeFinder, findsOneWidget);
 
     await tester.pump(Motion.brand);
-    expect(
-      _paint,
-      paints
-        ..rrect()
-        ..path()
-        ..path()
-        ..circle(),
-    );
+    await tester.pump(const Duration(milliseconds: 16));
     expect(tester.binding.transientCallbackCount, 0, reason: 'no loop: the ticker is done');
   });
 
   testWidgets('with reduced motion the finished mark is there at once', (tester) async {
     await tester.pumpWidget(_app(reduced: true));
 
-    expect(
-      _paint,
-      paints
-        ..rrect()
-        ..path()
-        ..path()
-        ..circle(),
-    );
+    expect(_image, findsOneWidget);
+    final image = tester.widget<Image>(_image);
+    expect((image.image as AssetImage).assetName, 'assets/icon/icon.png');
+    expect(image.semanticLabel, 'MegaWatt');
+    expect(tester.binding.transientCallbackCount, 0);
+  });
+
+  testWidgets('with animate false the mark renders still without ticker', (tester) async {
+    await tester.pumpWidget(_app(animate: false));
+
+    expect(_image, findsOneWidget);
+    final image = tester.widget<Image>(_image);
+    expect((image.image as AssetImage).assetName, 'assets/icon/icon.png');
+    expect(image.semanticLabel, 'MegaWatt');
     expect(tester.binding.transientCallbackCount, 0);
   });
 }

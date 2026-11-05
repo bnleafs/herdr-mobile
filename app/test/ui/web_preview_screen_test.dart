@@ -385,7 +385,7 @@ void main() {
       hasLength(2),
       reason: 'Android asks again for a file; the second is refused',
     );
-    expect(find.textContaining('herdr doesn’t download files'), findsOneWidget);
+    expect(find.textContaining('MegaWatt doesn’t download files'), findsOneWidget);
   });
 
   testWidgets('a single-page app’s route gets its title once the app has set it', (tester) async {

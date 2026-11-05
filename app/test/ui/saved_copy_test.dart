@@ -29,6 +29,8 @@ Future<void> _pump(WidgetTester tester, FakeAgentSession session) async {
   await tester.pump(const Duration(milliseconds: 100));
 }
 
+Finder _subtle(String text) => find.descendant(of: find.byType(SubtleLoadingIndicator), matching: find.text(text));
+
 Finder _strip(String text) =>
     find.descendant(of: find.byType(StatusStrip), matching: find.textContaining(text, findRichText: true));
 
@@ -50,29 +52,47 @@ void main() {
       await _pump(tester, session);
       expect(find.textContaining('Fix the build', findRichText: true), findsOneWidget);
       expect(find.textContaining('The retry loop never backs off.', findRichText: true), findsOneWidget);
-      expect(_strip('Updating…'), findsOneWidget);
-      expect(_strip('Showing the copy saved'), findsOneWidget);
-      expect(_strip('Connecting…'), findsNothing);
+      // Fast connect (< grace): shows no visual connecting/updating indicator
+      expect(_subtle('Updating…'), findsNothing);
+      expect(find.bySemanticsLabel('Updating…'), findsOneWidget);
+
+      // Slow connect (>= grace): subtle inline indicator appears
+      await tester.pump(Dwell.connectGrace);
+      expect(_subtle('Updating…'), findsOneWidget);
+      expect(find.byType(StatusStrip), findsNothing);
+      expect(_subtle('Connecting…'), findsNothing);
     });
 
     testWidgets('when the keeper has confirmed it the strip goes and the rows stay', (tester) async {
       final session = copy();
       await _pump(tester, session);
+      await tester.pump(Dwell.connectGrace);
+      expect(_subtle('Updating…'), findsOneWidget);
       session
         ..setLink(AgentLink.live)
         ..setSavedCopy(null);
       // The strip folds away (Collapse) rather than popping.
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(Motion.expand);
-      expect(find.byType(StatusStrip), findsNothing);
+      expect(_subtle('Updating…'), findsNothing);
       expect(find.textContaining('Fix the build', findRichText: true), findsOneWidget);
     });
 
     testWidgets('a session that was never saved still says Connecting…', (tester) async {
       final session = FakeAgentSession(link: AgentLink.connecting);
       await _pump(tester, session);
-      expect(_strip('Connecting…'), findsOneWidget);
-      expect(_strip('Updating…'), findsNothing);
+      // Fast connect (< grace): shows no visual connecting indicator
+      expect(_subtle('Connecting…'), findsNothing);
+      expect(
+        find.descendant(of: find.byType(SubtleLoadingIndicator), matching: find.bySemanticsLabel('Connecting…')),
+        findsOneWidget,
+      );
+
+      // Slow connect (>= grace): subtle indicator appears
+      await tester.pump(Dwell.connectGrace);
+      expect(_subtle('Connecting…'), findsOneWidget);
+      expect(find.byType(StatusStrip), findsNothing);
+      expect(_subtle('Updating…'), findsNothing);
     });
 
     testWidgets('a request that waited when the copy was saved is not offered, and comes back with the attach', (

@@ -2,4 +2,4 @@
 <!-- Resource shrinking drops what no code names. The notification icon is named
      only by a string passed from Dart, so it is kept explicitly. -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@drawable/ic_stat_herdr" />
+    tools:keep="@drawable/ic_stat_megawatt,@drawable/ic_megawatt_large,@mipmap/ic_launcher" />

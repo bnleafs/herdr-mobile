@@ -834,11 +834,27 @@ void main() {
     testWidgets('strips for connecting, reconnecting, ended and failed; none when live', (tester) async {
       final session = FakeAgentSession(link: AgentLink.connecting);
       await pumpScreen(tester, session);
-      expect(strip('Connecting…'), findsOneWidget);
+      // Fast connect (< grace): no visible connecting indicator
+      expect(
+        find.descendant(of: find.byType(SubtleLoadingIndicator), matching: find.text('Connecting…')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: find.byType(SubtleLoadingIndicator), matching: find.bySemanticsLabel('Connecting…')),
+        findsOneWidget,
+      );
+
+      // Slow connect (>= grace): subtle indicator appears
+      await tester.pump(Dwell.connectGrace);
+      expect(
+        find.descendant(of: find.byType(SubtleLoadingIndicator), matching: find.text('Connecting…')),
+        findsOneWidget,
+      );
+      expect(find.byType(StatusStrip), findsNothing);
 
       session.setLink(AgentLink.reconnecting, error: 'Wi-Fi dropped');
       await tester.pump();
-      expect(strip('Reconnecting…'), findsOneWidget);
+      expect(strip('Wi-Fi dropped'), findsOneWidget);
       expect(find.textContaining('Wi-Fi dropped', findRichText: true), findsOneWidget);
 
       session.setLink(AgentLink.failed, error: 'No route to host');

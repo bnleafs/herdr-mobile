@@ -13,6 +13,7 @@ import 'package:herdr_mobile/data/services/ssh_transport.dart' show hostKeyChang
 import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' show TransportFactory;
 
 import 'account_vault.dart';
+import 'settings_sync.dart';
 
 const sessionStorageKey = 'herdr.account.v2.session';
 const localInitializedKey = 'herdr.account.v2.local_initialized';
@@ -64,16 +65,19 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
   AccountSession({
     required this.machines,
     required this.connect,
+    this.settingsSync,
     AccountSessionStore? sessionStore,
     this.debounceDuration = const Duration(milliseconds: 1000),
     this.sealSnapshot = sealVault,
   }) : _sessionStore = sessionStore ?? const SecureAccountSessionStore() {
     machines.addListener(_onRepositoryChanged);
+    settingsSync?.addListener(_onSettingsChanged);
     WidgetsBinding.instance.addObserver(this);
   }
 
   final MachineRepository machines;
   final TransportFactory connect;
+  final SettingsSync? settingsSync;
   final AccountSessionStore _sessionStore;
   final Duration debounceDuration;
   final Future<String> Function(VaultContents, Uint8List) sealSnapshot;
@@ -122,6 +126,7 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     machines: machines,
     check: () => _check(generation),
     sealSnapshot: sealSnapshot,
+    settingsSync: settingsSync,
     connect: (profile, secrets, pin, notice) {
       _check(generation);
       return _activeTransport = connect(profile, secrets, pin, notice);
@@ -167,6 +172,7 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> init() async {
     final generation = _generation;
     if (_disposed) return;
+    await settingsSync?.init();
     _restorePending = true;
     try {
       final raw = await _sessionStore.read(sessionStorageKey);
@@ -350,6 +356,15 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     if (_initialized && !_isBackgrounded) _scheduleUpload();
   }
 
+  void _onSettingsChanged() {
+    _repoVersion++;
+    if (_suppressRepositoryEvents || !isSignedIn || _disposed || _signOutPending) return;
+    _pendingUpload = true;
+    _status = AccountSyncStatus.pending;
+    notifyListeners();
+    if (_initialized && !_isBackgrounded) _scheduleUpload();
+  }
+
   void _scheduleUpload() {
     _debounceTimer?.cancel();
     if (!_initialized || _disposed || _isBackgrounded) return;
@@ -465,7 +480,11 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
         secrets[m.id] = await machines.secretsFor(m.id);
         _check(generation);
       }
-      if (startRev == _repoVersion) return VaultContents(machines: profiles, secrets: secrets);
+      final settings = await settingsSync?.snapshot();
+      _check(generation);
+      if (startRev == _repoVersion) {
+        return VaultContents(machines: profiles, secrets: secrets, settings: settings);
+      }
     }
   }
 
@@ -495,6 +514,8 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     _cancelWork();
     _disposed = true;
     machines.removeListener(_onRepositoryChanged);
+    settingsSync?.removeListener(_onSettingsChanged);
+    settingsSync?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

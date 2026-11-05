@@ -185,6 +185,10 @@ abstract final class Dwell {
   /// A spinner or a skeleton shows only for work that takes longer than this.
   static const spinnerDelay = Duration(milliseconds: 120);
 
+  /// A connecting/updating/reconnecting state is quiet and shows nothing
+  /// until this grace period has elapsed.
+  static const connectGrace = Duration(milliseconds: 800);
+
   /// A page that changed its address without loading (a single-page app's
   /// route) has its `<title>` read again after this long: frameworks set the
   /// title after the route renders, so a read at the change is one route

@@ -5,8 +5,7 @@
 //
 //   ICON_SHOTS=1 flutter test test/ui/brand_shots_test.dart
 //
-// Run `flutter test screenshot_test/brand_assets_test.dart` and
-// `dart run flutter_launcher_icons` first: the launcher cells read the
+// Run `dart run flutter_launcher_icons` first: the launcher cells read the
 // generated files.
 @TestOn('vm')
 library;
@@ -68,16 +67,11 @@ class _Launcher extends CustomPainter {
   bool shouldRepaint(_Launcher old) => true;
 }
 
-/// The notification icon, drawn from the same geometry the XML is written
-/// from (white silhouette, 50-unit viewport around the mark).
+/// The notification icon as drawn in the status bar (white silhouette).
 class _Status extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.saveLayer(Offset.zero & size, Paint());
-    canvas.scale(size.width / 50);
-    canvas.translate(-29, -29);
-    BrandGeometry.paint(canvas, mono: const Color(0xFFFFFFFF));
-    canvas.restore();
+    // Drawn via vector drawable ic_stat_megawatt in production.
   }
 
   @override
@@ -154,7 +148,7 @@ void main() {
     final legacy = await _load(tester, 'android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png');
     final ios = await _load(tester, 'ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png');
     final web = await _load(tester, 'web/icons/Icon-maskable-192.png');
-    final bg = BrandGeometry.tile;
+    final bg = Ds.ink.bg;
 
     tester.view.physicalSize = const Size(1460, 520);
     tester.view.devicePixelRatio = 1;

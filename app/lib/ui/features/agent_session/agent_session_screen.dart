@@ -189,6 +189,8 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   /// (and "what is new" would count the history), so nothing is marked or
   /// asked before.
   bool _settled = false;
+  final _contentStopwatch = Stopwatch();
+  bool _recordedFirstContent = false;
 
   /// The session was finished and not yet reviewed when the screen opened:
   /// the first mark is the person reviewing it, so it says so with the Undo
@@ -211,6 +213,7 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   @override
   void initState() {
     super.initState();
+    _contentStopwatch.start();
     _announced = widget.session.state.items.length;
     _toldAnswered = widget.session.answeredElsewhere;
     if (context.read<Dictation?>() case final dictation?) {
@@ -333,8 +336,32 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     // A live session has replayed; an ended one has what it had (nothing to
     // wait for), unless that is nothing.
     final ended = session.link == AgentLink.ended && session.state.items.isNotEmpty;
-    if (session.link != AgentLink.live && !ended) return;
+    if (session.link != AgentLink.live && !ended) {
+      if (session.link == AgentLink.failed && !_recordedFirstContent) {
+        _recordedFirstContent = true;
+        ForkTelemetry.instance.recordStage(
+          opId: ForkTelemetry.instance.generateOpId(),
+          stage: TelemetryStage.chatContentShown,
+          durationMs: _contentStopwatch.elapsedMilliseconds,
+          agentKind: widget.session.agent,
+          machineLabel: widget.session.machine.profile.label,
+          outcome: StageOutcome.failure,
+        );
+      }
+      return;
+    }
     _settled = true;
+    if (!_recordedFirstContent) {
+      _recordedFirstContent = true;
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.chatContentShown,
+        durationMs: _contentStopwatch.elapsedMilliseconds,
+        agentKind: widget.session.agent,
+        machineLabel: widget.session.machine.profile.label,
+        outcome: StageOutcome.success,
+      );
+    }
     unawaited(_resolveSinceLeft());
   }
 
@@ -881,14 +908,28 @@ class _LinkStrip extends StatelessWidget {
       }
       return null;
     }
+    if (error == null && (link == AgentLink.connecting || link == AgentLink.reconnecting)) {
+      final title = switch (link) {
+        AgentLink.connecting when cachedAsOf != null => 'Updating…',
+        AgentLink.connecting => 'Connecting…',
+        AgentLink.reconnecting => 'Reconnecting…',
+        _ => '',
+      };
+      final state = link == AgentLink.connecting ? LinkState.connecting : LinkState.reconnecting;
+      return SubtleLoadingIndicator(
+        key: ValueKey(title),
+        title: title,
+        leading: LinkDot(state: state),
+      );
+    }
     final action = evicted ? 'Take over' : (link == AgentLink.failed ? 'Retry' : null);
     // The keeper is gone but the agent still has the conversation.
     final canContinue = link == AgentLink.ended && !evicted && resumable;
     final (color, state, title, fallback) = switch (link) {
-      AgentLink.connecting when cachedAsOf != null => (ds.working, LinkState.connecting, 'Updating…', null),
-      AgentLink.connecting => (ds.working, LinkState.connecting, 'Connecting…', null),
+      AgentLink.connecting when cachedAsOf != null => (ds.textTertiary, LinkState.connecting, 'Updating…', null),
+      AgentLink.connecting => (ds.textTertiary, LinkState.connecting, 'Connecting…', null),
       AgentLink.reconnecting => (
-        ds.working,
+        ds.textTertiary,
         LinkState.reconnecting,
         'Reconnecting…',
         observed ? 'The agent keeps running in its terminal.' : 'The agent keeps running on the machine.',

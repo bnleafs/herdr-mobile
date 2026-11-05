@@ -141,7 +141,7 @@ class _UpdateSheet extends StatelessWidget {
       UpdateStage.ready => [
         if (update.needsInstallPermission)
           const _Note(
-            'Allow herdr under \u201cInstall unknown apps\u201d on the Android page that opened, '
+            'Allow MegaWatt under \u201cInstall unknown apps\u201d on the Android page that opened, '
             'then come back and tap Install.',
           ),
         AppButton(

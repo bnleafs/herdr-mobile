@@ -356,8 +356,7 @@ because it is the app icon, not a status. The crook curls outward: over the
 shoulder it read as an R at 56 dp. One geometry (`BrandGeometry`) feeds the
 launcher icon, its Android 13 monochrome layer, the notification icon
 (`ic_stat_herdr.xml`), the iOS and web icons and the first-run screen; the
-files are rendered from it by `screenshot_test/brand_assets_test.dart`, then
-`dart run flutter_launcher_icons`, so they cannot drift. It replaced a teal and
+files are cut by `dart run flutter_launcher_icons`, so they cannot drift. It replaced a teal and
 amber hub-and-spokes mark whose colours were in no token, that had no themed
 layer and that blurred into a blob in the status bar. `BrandMark` (the first-run
 screen) draws itself once over `Motion.brand` the way a hand writes it: the

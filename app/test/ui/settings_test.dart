@@ -9,6 +9,7 @@ import 'package:herdr_mobile/data/app_info.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/agent_screens.dart';
 import 'package:herdr_mobile/data/repositories/app_settings.dart';
+import 'package:herdr_mobile/data/repositories/app_update.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/repositories/notification_settings.dart';
 import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
@@ -20,6 +21,7 @@ import 'package:herdr_mobile/ui/features/pane/pane_screen.dart';
 import 'package:herdr_mobile/data/repositories/terminal_settings.dart';
 import 'package:herdr_mobile/data/services/notifier.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
+import 'package:herdr_mobile/fork/telemetry/telemetry.dart';
 import 'package:herdr_mobile/ui/features/settings/font_size_control.dart';
 import 'package:herdr_mobile/ui/features/settings/settings_screen.dart';
 import 'package:herdr_mobile/ui/shell/home_shell.dart';
@@ -48,6 +50,8 @@ class _ScreensStore implements AgentScreensStore {
   @override
   Future<void> write(FrontAgent? front) async => saved = front;
 }
+
+class _FakeAppUpdate extends Fake implements AppUpdate {}
 
 class _Launcher extends UrlLauncherPlatform {
   final opened = <String>[];
@@ -362,6 +366,79 @@ void main() {
       await tester.tap(find.text('Source code'));
       await tester.pump();
       expect(launcher.opened, [appRepositoryUrl]);
+    });
+
+    test('connectionSubtitle reports telemetry destinations when configured and keeps existing branches otherwise', () {
+      addTearDown(ForkTelemetry.resetInstance);
+      final fakeUpdate = _FakeAppUpdate();
+
+      // Unconfigured branch: update == null
+      ForkTelemetry.resetInstance();
+      expect(
+        connectionSubtitle(null),
+        'Talks to herdr over SSH and sends nothing anywhere else. Dictation uses your phone’s own speech service.',
+      );
+      expect(
+        connectionSubtitle(fakeUpdate),
+        'Talks to herdr over SSH. The only other place it contacts is GitHub, to look for a new version and, when you tap Download, to fetch it. Dictation uses your phone’s own speech service.',
+      );
+
+      // Configured branch: Sentry only
+      ForkTelemetry.setTestInstance(
+        ForkTelemetry.withSinks(sinks: [SentryTelemetrySink(dsn: 'https://key@o123.ingest.sentry.io/1')]),
+      );
+      expect(
+        connectionSubtitle(null),
+        contains('sends diagnostics (errors, timings, logs; credentials and terminal/chat text scrubbed) to Sentry.'),
+      );
+      expect(
+        connectionSubtitle(fakeUpdate),
+        contains(
+          'It contacts GitHub to look for a new version and, when you tap Download, to fetch it. It also sends diagnostics (errors, timings, logs; credentials and terminal/chat text scrubbed) to Sentry.',
+        ),
+      );
+
+      // Configured branch: Sentry and PostHog
+      ForkTelemetry.setTestInstance(
+        ForkTelemetry.withSinks(
+          sinks: [
+            SentryTelemetrySink(dsn: 'https://key@o123.ingest.sentry.io/1'),
+            PostHogTelemetrySink(apiKey: 'phc_test_key', host: 'https://us.i.posthog.com'),
+          ],
+        ),
+      );
+      expect(
+        connectionSubtitle(null),
+        contains(
+          'sends diagnostics (errors, timings, logs; credentials and terminal/chat text scrubbed) to Sentry and PostHog.',
+        ),
+      );
+      expect(
+        connectionSubtitle(fakeUpdate),
+        contains(
+          'sends diagnostics (errors, timings, logs; credentials and terminal/chat text scrubbed) to Sentry and PostHog.',
+        ),
+      );
+    });
+
+    testWidgets('About Connection row displays telemetry info when configured', (tester) async {
+      addTearDown(ForkTelemetry.resetInstance);
+      ForkTelemetry.setTestInstance(
+        ForkTelemetry.withSinks(sinks: [SentryTelemetrySink(dsn: 'https://key@o123.ingest.sentry.io/1')]),
+      );
+      await pumpScreen(
+        tester,
+        app: AppSettings(MemoryAppSettingsStore()),
+        terminal: TerminalSettings(MemoryTerminalSettingsStore()),
+        height: 1800,
+      );
+      await openSettingsGroup(tester, 'About');
+      expect(
+        find.textContaining(
+          'sends diagnostics (errors, timings, logs; credentials and terminal/chat text scrubbed) to Sentry',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Licenses opens the licence page', (tester) async {

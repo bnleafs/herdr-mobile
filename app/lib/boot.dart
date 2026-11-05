@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -144,7 +146,7 @@ Future<HerdrMobileApp> bootApp({
   ConnectionFactory? connect,
   Notifier? notifier,
 }) async {
-  await ForkTelemetry.instance.init();
+  unawaited(ForkTelemetry.instance.init());
   final machines = MachineRepository(profiles: PrefsProfileStore(), secrets: secrets ?? KeychainSecretStore());
   await machines.load();
   // The keychain starts on every machine's secrets now, while the rest of the

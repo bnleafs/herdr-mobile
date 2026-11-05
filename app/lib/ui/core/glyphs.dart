@@ -39,7 +39,7 @@ extension AgentStatusColor on AgentStatus {
 extension LinkStateColor on LinkState {
   Color color(Ds ds) => switch (this) {
     LinkState.online => ds.textTertiary,
-    LinkState.connecting || LinkState.reconnecting => ds.working,
+    LinkState.connecting || LinkState.reconnecting => ds.textTertiary,
     LinkState.attention || LinkState.approval => ds.blocked,
     LinkState.disabled || LinkState.offline => ds.textTertiary,
   };

@@ -159,7 +159,7 @@ class WebPreview {
   Future<Uri> reopen(Uri url) async {
     final spec = url.scheme == 'http' && _isListenerHost(url.host) ? _specs[url.port] : null;
     if (spec == null) {
-      throw const WebPreviewException("Couldn’t open on this phone: herdr didn’t open this page.");
+      throw const WebPreviewException("Couldn’t open on this phone: MegaWatt didn’t open this page.");
     }
     final info = await _open(spec);
     final path = url.path.isEmpty ? '/' : url.path;

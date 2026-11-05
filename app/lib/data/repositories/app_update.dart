@@ -10,6 +10,8 @@ import '../models/release_info.dart';
 import '../services/apk_installer.dart';
 import '../services/release_feed.dart';
 import '../services/release_files.dart';
+import '../../fork/telemetry/envelope.dart';
+import '../../fork/telemetry/telemetry.dart';
 
 /// What is remembered between launches: the person's choice, when GitHub was
 /// last asked, and the newer release it named (so the suggestion is still
@@ -240,28 +242,41 @@ class AppUpdate extends ChangeNotifier {
     _stage = UpdateStage.checking;
     if (manual) _checkProblem = null;
     _notify();
+    final stopwatch = Stopwatch()..start();
+    var outcome = StageOutcome.upToDate;
     try {
       final found = await feed.newerThan(_current);
       if (_disposed) return;
       if (found == null) {
+        outcome = StageOutcome.upToDate;
         _release = null;
         _apk = null;
         _upToDate = true;
         _problem = null;
         _autoDownloadedVersion = null;
         unawaited(files.prune());
-      } else if (found != _release) {
-        _release = found;
-        _upToDate = false;
-        _problem = null;
-        _autoDownloadedVersion = null;
-        _apk = await files.verified(found);
-        unawaited(files.prune(keep: found));
+      } else {
+        outcome = StageOutcome.foundUpdate;
+        if (found != _release) {
+          _release = found;
+          _upToDate = false;
+          _problem = null;
+          _autoDownloadedVersion = null;
+          _apk = await files.verified(found);
+          unawaited(files.prune(keep: found));
+        }
       }
       _checkProblem = null;
     } on Object catch (e) {
+      outcome = StageOutcome.failure;
       if (manual) _checkProblem = e is UpdateException ? e.message : 'Couldn’t look for updates.';
     } finally {
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.appUpdateCheck,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: outcome,
+      );
       if (!_disposed) {
         _lastCheck = _now();
         _stage = _apk != null && _release != null ? UpdateStage.ready : UpdateStage.idle;
@@ -292,6 +307,8 @@ class AppUpdate extends ChangeNotifier {
     _needsPermission = false;
     _autoDownloadedVersion = release.version;
     _notify();
+    final stopwatch = Stopwatch()..start();
+    var outcome = StageOutcome.success;
     final job = _job = files.download(release, (n) {
       if (!_disposed) {
         _received = n;
@@ -305,18 +322,27 @@ class AppUpdate extends ChangeNotifier {
       _apk = apk;
       _stage = UpdateStage.ready;
     } on UpdateCancelled {
+      outcome = StageOutcome.cancelled;
       if (_disposed) return;
       _stage = UpdateStage.idle;
     } on StaleRelease catch (e) {
+      outcome = StageOutcome.failure;
       if (_disposed) return;
       _stage = UpdateStage.idle;
       _problem = e.message;
       stale = true;
     } on UpdateException catch (e) {
+      outcome = StageOutcome.failure;
       if (_disposed) return;
       _stage = UpdateStage.idle;
       _problem = e.message;
     } finally {
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.appUpdateDownload,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: outcome,
+      );
       _job = null;
       if (!_disposed) _notify();
     }

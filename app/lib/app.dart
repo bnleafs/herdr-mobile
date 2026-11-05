@@ -33,8 +33,12 @@ import 'data/services/snapshot_cache.dart';
 import 'data/services/task_mover.dart';
 import 'data/services/transport_factory.dart';
 import 'fork/account/account_session.dart';
+import 'fork/account/settings_sync.dart';
 import 'ui/support/deep_link.dart';
 import 'ui/support/keyboard_frames.dart';
+import 'fork/telemetry/telemetry.dart';
+
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -254,6 +258,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
     widget.agentSessions?.onLifecycleState(state);
     widget.attention?.onLifecycleState(state);
     widget.update?.onLifecycleState(state);
+    ForkTelemetry.instance.sessionTracker.onLifecycleState(state);
   }
 
   /// Observed sessions stay attached in the background exactly when the
@@ -297,7 +302,17 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
       Provider<TransportFactory>.value(value: createSshTransport),
       ChangeNotifierProvider(
         lazy: false,
-        create: (_) => AccountSession(machines: widget.machines, connect: createSshTransport)..init(),
+        create: (_) => AccountSession(
+          machines: widget.machines,
+          connect: createSshTransport,
+          settingsSync: SettingsSync(
+            appSettings: widget.appSettings,
+            terminalSettings: widget.terminalSettings,
+            notificationSettings: _notificationSettings,
+            quickPhrases: widget.quickPhrases,
+            appUpdate: widget.update,
+          ),
+        )..init(),
       ),
       if (widget.agentSessions case final sessions?) ListenableProvider<AgentSessions>.value(value: sessions),
       ChangeNotifierProvider.value(value: _attentionSet),
@@ -308,7 +323,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
     child: ListenableBuilder(
       listenable: widget.appSettings,
       builder: (context, _) => MaterialApp(
-        title: 'megawatt',
+        title: 'MegaWatt',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(terminal: widget.appSettings.darkTerminal ? TerminalPalette.dark : null),
         darkTheme: AppTheme.dark(),
@@ -334,7 +349,13 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
           ),
         ),
         navigatorKey: _links.navigatorKey,
-        navigatorObservers: [_toastRoutes],
+        navigatorObservers: [
+          _toastRoutes,
+          SentryNavigatorObserver(
+            enableAutoTransactions: false,
+            routeNameExtractor: (s) => s == null ? null : RouteSettings(name: s.name),
+          ),
+        ],
         home: _home,
       ),
     ),

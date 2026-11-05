@@ -671,7 +671,7 @@ class AttentionNotifier {
           NotifyKind.needsYou => needYou(want, noun: 'agent'),
           NotifyKind.finished => '${countOf(want, 'agent')} done',
         },
-        body: 'Open herdr to see which',
+        body: 'Open MegaWatt to see which',
         link: agentsBoardLink,
       );
       unawaited(_safe(() => _notifier.show(notification)));

@@ -14,6 +14,8 @@ import '../services/herdr_transport.dart';
 import '../services/remote_files.dart';
 import '../services/snapshot_cache.dart';
 import '../words/error_words.dart';
+import '../../fork/telemetry/envelope.dart';
+import '../../fork/telemetry/telemetry.dart';
 import 'reviewed_state.dart';
 import 'screen_waits.dart';
 import 'web_preview.dart';
@@ -311,6 +313,31 @@ class MachineConnection extends ChangeNotifier {
   };
   bool get isLive => _state == LinkState.online;
 
+  ConnectPath? _pendingConnectPath = ConnectPath.coldStart;
+  DateTime? _connectStartedAt;
+
+  void markConnect(ConnectPath path) {
+    _pendingConnectPath = path;
+    _connectStartedAt = _clock();
+  }
+
+  void _recordLinkLive({int? attempt}) {
+    final path = _pendingConnectPath;
+    final started = _connectStartedAt;
+    if (path == null || started == null) return;
+    _pendingConnectPath = null;
+    _connectStartedAt = null;
+    final durationMs = _clock().difference(started).inMilliseconds;
+    ForkTelemetry.instance.recordStage(
+      opId: ForkTelemetry.instance.generateOpId(),
+      stage: TelemetryStage.linkLive,
+      event: 'link_live',
+      attempt: attempt,
+      durationMs: durationMs,
+      connectPath: path,
+    );
+  }
+
   bool _background = false;
 
   /// The panes the live subscription names for their status (the background
@@ -495,6 +522,8 @@ class MachineConnection extends ChangeNotifier {
       _set(LinkState.disabled);
       return;
     }
+    _pendingConnectPath ??= ConnectPath.coldStart;
+    _connectStartedAt ??= _clock();
     _seedFromCache();
     _startLoop();
   }
@@ -530,6 +559,8 @@ class MachineConnection extends ChangeNotifier {
   /// it now and reconnect immediately, without waiting out a backoff.
   void reconnect() {
     if (_disposed || _state == LinkState.attention) return;
+    _pendingConnectPath ??= ConnectPath.rebuiltResume;
+    _connectStartedAt = _clock();
     _stopLoop();
     _api.reset();
     start();
@@ -600,6 +631,7 @@ class MachineConnection extends ChangeNotifier {
           await _refresh();
           if (!alive()) return;
           _set(LinkState.online);
+          _recordLinkLive(attempt: attempt);
           final liveAt = _clock();
           final eventsBefore = _events;
           try {
@@ -675,6 +707,9 @@ class MachineConnection extends ChangeNotifier {
     final quietChanged = _evaluateQuiet(s, now);
     final shown = _present(s);
     final shownChanged = shown != _snapshot;
+    if (_state == LinkState.online && _pendingConnectPath == ConnectPath.refreshedResume) {
+      _recordLinkLive();
+    }
     if (!rawChanged && !shownChanged && !quietChanged) {
       // Nothing to show, but the time the panes were last seen moved on.
       final written = _lastPersistAt;

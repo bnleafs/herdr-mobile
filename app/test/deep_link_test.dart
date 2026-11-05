@@ -345,7 +345,7 @@ void main() {
       await pumpApp(tester);
       await pushLink(tester, 'herdr://agent/onlyone');
       expect(opened, isEmpty);
-      expect(find.text("That link isn’t one herdr can open."), findsOneWidget);
+      expect(find.text("That link isn’t one MegaWatt can open."), findsOneWidget);
       await tester.pumpAndSettle(const Duration(seconds: 5));
       await tearDownApp(tester);
     });
@@ -462,7 +462,7 @@ void main() {
     testWidgets('without sessions to open, a session link isn’t one this app can open', (tester) async {
       await pumpApp(tester);
       await pushLink(tester, 'herdr://session/Mac%20mini/k1');
-      expect(find.text("That link isn’t one herdr can open."), findsOneWidget);
+      expect(find.text("That link isn’t one MegaWatt can open."), findsOneWidget);
       await tester.pumpAndSettle(const Duration(seconds: 5));
       await tearDownApp(tester);
     });

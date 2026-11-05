@@ -373,6 +373,7 @@ void main() {
       await tester.pump();
 
       await tester.ensureVisible(find.text('Past sessions'));
+      await tester.pump();
       await tester.tap(find.text('Past sessions'));
       await settleHistory(tester, 8);
       expect(find.byType(PastSessionsScreen), findsOneWidget);
@@ -387,9 +388,8 @@ void main() {
       expect(find.byTooltip('Past sessions'), findsNothing, reason: 'not a header button of its own');
       await tester.tap(find.byTooltip('New agent session'));
       await settleHistory(tester, 8);
-      await tester.tap(find.text('Agent session'));
-      await settleHistory(tester, 8);
       await tester.ensureVisible(find.text('Past sessions'));
+      await tester.pump();
       await tester.tap(find.text('Past sessions'));
       await settleHistory(tester, 8);
       expect(find.byType(PastSessionsScreen), findsOneWidget);

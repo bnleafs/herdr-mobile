@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import '../models/machine_profile.dart';
 import '../services/network_monitor.dart';
+import '../../fork/telemetry/envelope.dart';
+import '../../fork/telemetry/telemetry.dart';
 import 'agent_screens.dart';
 import 'fleet_agent.dart';
 import 'machine_connection.dart';
@@ -361,14 +363,23 @@ class FleetRepository extends ChangeNotifier {
       return;
     }
     final refresh = <MachineConnection>[];
+    var reconnectCount = 0;
     for (final c in connections) {
       final id = c.profile.id;
       if (wasSuspended.contains(id) || (away > longAway && !keeps(id))) {
+        reconnectCount++;
+        c.markConnect(ConnectPath.rebuiltResume);
         c.reconnect();
       } else {
+        c.markConnect(ConnectPath.refreshedResume);
         refresh.add(c);
       }
     }
+    ForkTelemetry.instance.recordStage(
+      opId: ForkTelemetry.instance.generateOpId(),
+      stage: TelemetryStage.resumeReconnect,
+      reconnectCount: reconnectCount,
+    );
     await _refresh(refresh);
   }
 

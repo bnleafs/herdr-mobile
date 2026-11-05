@@ -7,6 +7,8 @@ import 'package:herdr_mobile/data/models/herdr_models.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/snapshot_cache.dart';
+import 'package:herdr_mobile/fork/telemetry/envelope.dart';
+import 'package:herdr_mobile/fork/telemetry/telemetry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_network.dart';
@@ -100,4 +102,38 @@ void main() {
     expect(app.fleet!.connections, isEmpty);
     expect(app.machines.machines, isEmpty);
   });
+
+  test('boot does not await telemetry (a sink whose init never completes does not delay bootApp returning)', () async {
+    SharedPreferences.resetStatic();
+    SharedPreferences.setMockInitialValues({});
+
+    final telemetry = ForkTelemetry.withSinks(sinks: [_HangingSink()], preInitialized: false);
+    ForkTelemetry.setTestInstance(telemetry);
+    addTearDown(ForkTelemetry.resetInstance);
+
+    final appFuture = bootApp(
+      network: FakeNetwork(),
+      secrets: MemorySecretStore(),
+      snapshotCache: PrefsSnapshotCache(),
+    );
+
+    final app = await appFuture.timeout(const Duration(seconds: 1));
+    addTearDown(() => app.fleet?.dispose());
+
+    await app.fleet!.settled();
+    expect(app.fleet!.connections, isEmpty);
+  });
+}
+
+class _HangingSink implements TelemetrySink {
+  @override
+  Future<void> init() => Completer<void>().future;
+  @override
+  Future<void> sendMilestone(TelemetryEnvelope envelope) async {}
+  @override
+  Future<void> sendError(TelemetryEnvelope envelope) async {}
+  @override
+  Future<void> reset() async {}
+  @override
+  Future<void> close() async {}
 }

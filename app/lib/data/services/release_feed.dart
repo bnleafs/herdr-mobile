@@ -14,7 +14,7 @@ abstract interface class ReleaseFeed {
   Future<ReleaseInfo?> newerThan(AppVersion current);
 }
 
-const _unreadable = UpdateException('GitHub sent something herdr couldn’t read. Try again later.');
+const _unreadable = UpdateException('GitHub sent something MegaWatt couldn’t read. Try again later.');
 
 /// Words for what went wrong talking to GitHub, for [UpdateException]. A
 /// failure the person caused or can fix says so; everything else says what
@@ -62,7 +62,7 @@ Future<HttpClientResponse> openGet(HttpClient client, Uri uri, {Map<String, Stri
     final location = response.headers.value(HttpHeaders.locationHeader);
     final next = location == null ? null : url.resolve(location);
     if (hops >= 4 || next == null || !_trustedRedirect(next)) {
-      throw const UpdateException('GitHub sent the download somewhere herdr won’t follow. Try again later.');
+      throw const UpdateException('GitHub sent the download somewhere MegaWatt won’t follow. Try again later.');
     }
     url = next;
   }

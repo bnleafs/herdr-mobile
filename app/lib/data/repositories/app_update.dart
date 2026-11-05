@@ -113,10 +113,9 @@ class AppUpdate extends ChangeNotifier {
     required this.installer,
     AppVersion? current,
     DateTime Function()? now,
-    bool autoDownload = true,
+    this._autoDownload = true,
   }) : _current = current ?? AppVersion.tryParse(appVersion)!,
-       _now = now ?? DateTime.now,
-       _autoDownload = autoDownload;
+       _now = now ?? DateTime.now;
 
   /// How long a check stays fresh. Also the wait after a failed one: a phone
   /// on a bad radio is not asked again every time the app is opened.
@@ -130,7 +129,7 @@ class AppUpdate extends ChangeNotifier {
   final DateTime Function() _now;
 
   bool _autoCheck = true;
-  bool _autoDownload = true;
+  bool _autoDownload;
   DateTime? _lastCheck;
   ReleaseInfo? _release;
   UpdateStage _stage = UpdateStage.idle;

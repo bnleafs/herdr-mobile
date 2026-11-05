@@ -27,10 +27,7 @@ void main() {
       ('$_base/$_v-whats-new.jpg', 'https://evil.example/$_v-whats-new.mp4'),
       ('$other/0.1.19-whats-new.jpg', '$other/0.1.19-whats-new.mp4'),
       ('$_base/other.jpg', '$_base/$_v-whats-new.mp4'),
-      (
-        'https://github.com:8443/$appRepository/releases/download/v$_v/$_v-whats-new.jpg',
-        '$_base/$_v-whats-new.mp4',
-      ),
+      ('https://github.com:8443/$appRepository/releases/download/v$_v/$_v-whats-new.jpg', '$_base/$_v-whats-new.mp4'),
       ('$_base/$_v-whats-new.jpg?x=1', '$_base/$_v-whats-new.mp4'),
       ('http://github.com/$appRepository/releases/download/v$_v/$_v-whats-new.jpg', '$_base/$_v-whats-new.mp4'),
     ]) {

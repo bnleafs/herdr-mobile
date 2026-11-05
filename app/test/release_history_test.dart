@@ -8,7 +8,8 @@ import 'package:herdr_mobile/data/models/release_history.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/settings/release_history_screen.dart';
 
-final _sample = '''
+final _sample =
+    '''
 # Changelog
 
 Intro text.

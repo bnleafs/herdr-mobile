@@ -489,6 +489,7 @@ class _PaneViewState extends State<_PaneView> {
     final pressed = _mods.apply(keys);
     // The key already ticked; a refused Enter only says why.
     if (_refusesEnter(pressed)) return;
+    if (!context.read<MachineConnection>().acceptsInput(_paneId)) return;
     if (!await _vm.sendKeys(pressed)) Haptics.failed();
   }
 
@@ -505,6 +506,7 @@ class _PaneViewState extends State<_PaneView> {
 
   /// A character typed while Ctrl/Alt was armed, already a combo.
   void _pressChord(String combo) {
+    if (!context.read<MachineConnection>().acceptsInput(_paneId)) return;
     Haptics.tick();
     _vm.sendKeys([combo]);
   }
@@ -537,6 +539,7 @@ class _PaneViewState extends State<_PaneView> {
   /// uploaded, and the chips come back when the send fails.
   Future<void> _submit() async {
     if (_vm.sending) return;
+    if (!context.read<MachineConnection>().acceptsInput(_paneId)) return;
     final text = _input.text;
     final chips = _attachments.items;
     if (text.trim().isEmpty && chips.isEmpty) {
@@ -1061,8 +1064,9 @@ class _Composer extends StatelessWidget {
       final pane = m.paneById(paneId);
       return (m.state, pane != null, pane?.agent, pane?.restoreError != null);
     });
+    final acceptsInput = context.select<MachineConnection, bool>((m) => m.acceptsInput(paneId));
     final sending = context.select<PaneViewModel, bool>((v) => v.sending);
-    final enabled = state == LinkState.online && open && !notRunning;
+    final inputEnabled = open && !notRunning;
     final hint = composerHint(
       agent == null || agent.isEmpty ? null : agentName(agent),
       linkWord: switch (state) {
@@ -1088,7 +1092,7 @@ class _Composer extends StatelessWidget {
           : ListenableBuilder(
               listenable: attachments,
               builder: (context, _) => ComposerAttachButton(
-                enabled: enabled,
+                enabled: inputEnabled,
                 count: compactLayout(context) ? attachments.items.length : 0,
                 onPressed: onAttach,
                 onWarm: attachments.warm,
@@ -1101,9 +1105,10 @@ class _Composer extends StatelessWidget {
         builder: (context, _) => ComposerField(
           controller: controller,
           focusNode: focusNode,
-          enabled: enabled,
-          hint: enabled ? attachments.waitingReason ?? hint : hint,
-          onSubmit: onSubmit,
+          enabled: inputEnabled,
+          hint: inputEnabled ? attachments.waitingReason ?? hint : hint,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
           // A shell's line stays in the terminal's font; an agent's prompt is
           // prose, as in the chat.
           mono: agent == null,
@@ -1111,7 +1116,7 @@ class _Composer extends StatelessWidget {
           autocorrect: agent != null,
           enableSuggestions: agent != null,
           hasLeading: agent != null,
-          keyboardOnPointerDown: enabled,
+          keyboardOnPointerDown: inputEnabled,
         ),
       ),
       trailing: ListenableBuilder(
@@ -1119,7 +1124,7 @@ class _Composer extends StatelessWidget {
         builder: (context, _) {
           final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
           final dictate = agent == null ? null : dictation;
-          if (dictate != null && enabled && (dictate.listening || !hasContent)) {
+          if (dictate != null && acceptsInput && (dictate.listening || !hasContent)) {
             return ComposerRoundButton(
               label: dictate.listening ? 'Stop dictating' : 'Dictate',
               icon: LucideIcons.mic,
@@ -1136,7 +1141,7 @@ class _Composer extends StatelessWidget {
             label: 'Send',
             icon: LucideIcons.arrowUp,
             iconSize: IconSize.bar,
-            ready: enabled && !sending && hasContent && attachments.canSend,
+            ready: acceptsInput && !sending && hasContent && attachments.canSend,
             busy: sending,
             onPressed: onSubmit,
           );

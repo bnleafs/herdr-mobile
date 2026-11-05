@@ -106,7 +106,8 @@ class Composer extends StatelessWidget {
     builder: (context, snapshot) {
       final (link, phase, stopping, blocked, relay, delivery, waiting) = snapshot;
       final live = link == AgentLink.live;
-      final typing = live && blocked == null;
+      final canSend = live && blocked == null;
+      final editable = link != AgentLink.ended && blocked == null;
       final reason = composerReason(link);
       // Waiting on background work the turn is over: Send, not Stop (Stop
       // would end nothing, and an agent in a terminal still says `working`).
@@ -124,12 +125,12 @@ class Composer extends StatelessWidget {
                   void open() => unawaited(showAttachSheet(context, target: session, attachments: attachments));
                   return HideWhenCompact(
                     compact: ComposerAttachButton(
-                      enabled: typing,
+                      enabled: editable,
                       count: attachments.items.length,
                       onPressed: open,
                       onWarm: attachments.warm,
                     ),
-                    child: ComposerAttachButton(enabled: typing, onPressed: open, onWarm: attachments.warm),
+                    child: ComposerAttachButton(enabled: editable, onPressed: open, onWarm: attachments.warm),
                   );
                 },
               ),
@@ -140,11 +141,11 @@ class Composer extends StatelessWidget {
           builder: (context, _) => ComposerField(
             controller: controller,
             focusNode: focusNode,
-            enabled: typing,
-            keyboardOnPointerDown: live,
+            enabled: editable,
+            keyboardOnPointerDown: editable,
             keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
             hint: reason ?? blocked ?? attachments.waitingReason ?? hint,
-            onSubmit: onSubmit,
             hasLeading: attaches,
           ),
         ),
@@ -169,7 +170,7 @@ class Composer extends StatelessWidget {
                       session.cancel();
                     },
                   ),
-                if (dictation case final dictate? when typing && (dictate.listening || !hasContent))
+                if (dictation case final dictate? when canSend && (dictate.listening || !hasContent))
                   // The mic is Send's place while there is nothing to send;
                   // a long press picks the language.
                   ComposerRoundButton(
@@ -190,7 +191,7 @@ class Composer extends StatelessWidget {
                     label: sendLabel,
                     icon: sendIcon,
                     iconSize: IconSize.bar,
-                    ready: typing && hasContent && attachments.canSend,
+                    ready: canSend && hasContent && attachments.canSend,
                     onPressed: onSubmit,
                     onLongPress: delivery == SendDelivery.steered ? onSubmitAfter : null,
                   ),
@@ -233,7 +234,7 @@ class Composer extends StatelessWidget {
               child: ListenableBuilder(
                 listenable: Listenable.merge([focusNode, controller]),
                 builder: (context, _) => DeliveryHint(
-                  delivery: working && typing && (focusNode.hasFocus || controller.text.isNotEmpty) ? delivery : null,
+                  delivery: working && canSend && (focusNode.hasFocus || controller.text.isNotEmpty) ? delivery : null,
                 ),
               ),
             ),

@@ -356,7 +356,6 @@ void main() {
       expect(m.subagents.single.assignment.length, lessThanOrEqualTo(400));
       expect(m.subagents.single.assignment, endsWith('…'));
     });
-
     // Recorded on 2026-11-05: four scouts failed (their model server was down),
     // the parent killed three with `write proc://<id>/kill`, and the roster
     // said done for those three: the kill's snapshot was not read, and omp

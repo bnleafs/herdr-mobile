@@ -270,7 +270,7 @@ void main() {
       expect(session.sent, ['status?']);
     });
 
-    testWidgets('while its turn runs a terminal agent has Stop beside Send, and the keyboard send goes through', (
+    testWidgets('while its turn runs a terminal agent has Stop beside Send, and Send button goes through', (
       tester,
     ) async {
       final session = waitingTerminal();
@@ -279,7 +279,11 @@ void main() {
       expect(find.byIcon(HerdrIcons.stopMark), findsOneWidget);
       expect(find.byIcon(LucideIcons.arrowUp), findsOneWidget);
       await tester.enterText(find.byType(TextField).last, 'status?');
+      // Keyboard actions send nothing; Send button dispatches into the turn
       await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      expect(session.sent, isEmpty, reason: 'keyboard actions must never dispatch');
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
       await tester.pump();
       expect(session.sent, ['status?'], reason: 'a terminal agent takes a message into its running turn');
     });

@@ -22,6 +22,7 @@ import 'package:herdr_mobile/ui/render/terminal/terminal_cells.dart';
 import 'package:herdr_mobile/ui/render/terminal/terminal_view.dart';
 import 'package:herdr_mobile/ui/features/agent_session/attach_picker.dart';
 import 'package:herdr_mobile/ui/features/agents/agent_navigation.dart';
+import 'package:herdr_mobile/ui/features/composer/composer_frame.dart';
 import 'package:herdr_mobile/ui/features/files/file_browser_screen.dart';
 import 'package:herdr_mobile/ui/features/files/file_viewer_screen.dart';
 import 'package:herdr_mobile/ui/features/pane/pane_bar.dart';
@@ -437,14 +438,14 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets("the keyboard’s send key on an empty field presses enter", (tester) async {
+    testWidgets("the keyboard’s send key on an empty field sends nothing", (tester) async {
       await pumpPane(tester);
 
       await tester.showKeyboard(composer());
       await tester.testTextInput.receiveAction(TextInputAction.send);
       await _settle(tester);
 
-      expect(transport.sent, ['keys:enter']);
+      expect(transport.sent, isEmpty, reason: 'keyboard action does not dispatch');
       await teardown(tester);
     });
 
@@ -455,7 +456,7 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.send);
       await _settle(tester);
 
-      expect(transport.sent, ['keys:enter']);
+      expect(transport.sent, isEmpty, reason: 'keyboard action does not dispatch');
       await teardown(tester);
     });
 
@@ -502,7 +503,11 @@ void main() {
       await goOffline(tester);
 
       expect(find.text('Offline · reconnecting'), findsOneWidget);
-      expect(tester.widget<TextField>(composer()).enabled, isFalse);
+      expect(tester.widget<TextField>(composer()).enabled, isTrue);
+      final sendButton = tester.widget<ComposerRoundButton>(
+        find.byWidgetPredicate((w) => w is ComposerRoundButton && w.label == 'Send'),
+      );
+      expect(sendButton.ready, isFalse);
       await teardown(tester);
     });
   });
@@ -878,17 +883,35 @@ void main() {
   });
 
   group('the keyboard send key', () {
-    testWidgets('sends and keeps the keyboard open', (tester) async {
+    testWidgets('keyboard actions send nothing and only app Send button dispatches', (tester) async {
       await pumpPane(tester);
 
       await tester.showKeyboard(composer());
       await tester.enterText(composer(), 'ls');
+      // Keyboard actions (send, done, newline) and hardware key events do not dispatch
       await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.testTextInput.receiveAction(TextInputAction.newline);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
       await _settle(tester);
 
+      expect(transport.sent, isEmpty, reason: 'keyboard actions and hardware keys must never dispatch');
+      expect(tester.widget<TextField>(composer()).controller!.text, 'ls', reason: 'draft preserved');
+
+      // App Send button dispatches
+      await tester.tap(send());
+      await _settle(tester);
       expect(transport.sent, ['line:ls']);
-      expect(tester.state<EditableTextState>(find.byType(EditableText)).widget.focusNode.hasFocus, isTrue);
-      expect(tester.testTextInput.isVisible, isTrue);
+      expect(tester.widget<TextField>(composer()).controller!.text, isEmpty);
       await teardown(tester);
     });
 
@@ -896,11 +919,10 @@ void main() {
       transport.sendGate = Completer<void>();
       await pumpPane(tester);
 
-      await tester.showKeyboard(composer());
       await tester.enterText(composer(), 'ls');
-      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.tap(send());
       await tester.pump();
-      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.tap(send());
       await tester.pump();
 
       expect(transport.sent, ['line:ls']);
@@ -914,7 +936,7 @@ void main() {
       await pumpPane(tester);
 
       await tester.enterText(composer(), 'ls');
-      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.tap(send());
       await tester.pump();
       await tester.pumpWidget(const SizedBox());
       transport.sendGate!.complete();

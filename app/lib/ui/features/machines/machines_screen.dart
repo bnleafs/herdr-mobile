@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -9,6 +11,8 @@ import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/repositories/machine_repository.dart';
 import '../../../data/words/plural.dart';
+import '../../../fork/continuity_presentation.dart';
+import '../../../fork/terminal_creation.dart';
 import 'approval_button.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
@@ -126,6 +130,12 @@ class _MachineRow extends StatelessWidget {
       context,
       title: p.label,
       actions: [
+        if (machine.isLive)
+          SheetAction(
+            label: 'New terminal',
+            icon: LucideIcons.terminal,
+            onTap: () => unawaited(createTerminalFromChooser(context, machine)),
+          ),
         SheetAction(
           label: 'Edit',
           icon: LucideIcons.pencil,
@@ -286,11 +296,7 @@ class _Subtitle extends StatelessWidget {
     // Only the states that need the person are tinted (with the AA text tone,
     // not the glyph colour); the dot carries the rest.
     final loud = state == LinkState.attention || state == LinkState.approval;
-    final lead = state == LinkState.online
-        ? (agents == 0 ? 'No agents' : countOf(agents, 'agent'))
-        : p.enabled
-        ? state.label
-        : '${state.label} · not connecting';
+    final lead = machineSubtitleLead(machine: machine, profile: p, agents: agents);
     final address = '${p.username}@${p.host}${p.port == 22 ? '' : ':${p.port}'}';
     final style = Type.secondary.copyWith(color: ds.textMuted);
     final leadStyle = loud ? Type.secondaryStrong.copyWith(color: ds.blockedText) : style;

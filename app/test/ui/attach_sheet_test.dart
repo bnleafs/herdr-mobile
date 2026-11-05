@@ -584,11 +584,17 @@ void main() {
       await tester.enterText(find.byType(TextField).last, 'see the report');
       await tester.testTextInput.receiveAction(TextInputAction.send);
       await _wait(tester);
+      expect(session.sent, isEmpty, reason: 'keyboard does not send');
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
+      await _wait(tester);
       expect(session.sent, isEmpty, reason: 'not while a file is on its way');
       fake.uploader.last.finish();
       await tester.pump();
       await tester.pump();
       await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _wait(tester);
+      expect(session.sent, isEmpty, reason: 'keyboard does not send after upload finishes');
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
       await _wait(tester);
       expect(session.sent, ['see the report']);
     });

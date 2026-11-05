@@ -141,12 +141,32 @@ void main() {
       expect((found as Located).path, inCwd);
     });
 
-    test('no reference and no pid file says how to link it', () async {
+    test('no reference and no pid file is not yet starting, then says how to link it after grace window', () async {
+      var now = DateTime(2026, 1, 1, 12, 0);
+      final timedLocator = ClaudeLocator(clock: () => now);
+      final pane = _pane();
+      final files = _files(FakeFs());
+      Future<List<PaneProcess>> procs(String _) async => [const PaneProcess(pid: 4242, name: 'claude')];
+
+      final initial = await timedLocator.locateWith(files, procs, pane);
+      expect(initial, isA<NotYet>());
+      expect((initial as NotYet).why, ClaudeLocator.readinessWhy);
+
+      // Advance clock past the 90-second grace window:
+      now = now.add(const Duration(seconds: 91));
+      final expired = await timedLocator.locateWith(files, procs, pane);
+      expect(expired, isA<Unlinked>());
+      expect((expired as Unlinked).why, contains('herdr integration install claude'));
+    });
+
+    test('permission error on pid file is not readiness and says how to link it', () async {
+      final fs = FakeFs()..deny.add('/home/dev/.claude/sessions/4242.json');
       final found = await locator.locateWith(
-        _files(FakeFs()),
+        _files(fs),
         (_) async => [const PaneProcess(pid: 4242, name: 'claude')],
         _pane(),
       );
+      expect(found, isA<Unlinked>());
       expect((found as Unlinked).why, contains('herdr integration install claude'));
     });
 

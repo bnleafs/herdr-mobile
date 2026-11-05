@@ -21,6 +21,10 @@ import '../../../data/repositories/sent_phrases.dart';
 import '../../../data/repositories/slash_usage.dart';
 import '../../../data/services/dictation.dart';
 import '../../../data/models/herdr_models.dart' show AgentStatus;
+import '../../../data/repositories/observed_session.dart';
+import '../../../data/repositories/observed_sessions.dart';
+import '../../../fork/telemetry/envelope.dart';
+import '../../../fork/telemetry/telemetry.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -877,7 +881,7 @@ class _LinkStrip extends StatelessWidget {
       }
       return null;
     }
-    final action = evicted ? 'Take over' : (link == AgentLink.failed && !observed ? 'Retry' : null);
+    final action = evicted ? 'Take over' : (link == AgentLink.failed ? 'Retry' : null);
     // The keeper is gone but the agent still has the conversation.
     final canContinue = link == AgentLink.ended && !evicted && resumable;
     final (color, state, title, fallback) = switch (link) {
@@ -898,6 +902,28 @@ class _LinkStrip extends StatelessWidget {
       ),
       AgentLink.live => (ds.done, LinkState.online, '', null),
     };
+    final retryButton = action == null
+        ? null
+        : AppButton(
+            label: action,
+            compact: true,
+            kind: AppButtonKind.secondary,
+            onPressed: () {
+              if (action == 'Retry') {
+                if (observed && session is ObservedAgentSession) {
+                  final obs = session as ObservedAgentSession;
+                  context.read<ObservedSessions?>()?.clearUnlinked(obs.machine, obs.paneId);
+                  ForkTelemetry.instance.recordStage(opId: obs.opId, stage: TelemetryStage.userRetry);
+                } else {
+                  ForkTelemetry.instance.recordStage(
+                    opId: ForkTelemetry.instance.generateOpId(),
+                    stage: TelemetryStage.userRetry,
+                  );
+                }
+              }
+              unawaited(session.reattach());
+            },
+          );
     return _strip(
       color: color,
       state: state,
@@ -908,15 +934,17 @@ class _LinkStrip extends StatelessWidget {
       action: canContinue
           ? ContinueButton(session: session)
           : link == AgentLink.failed && openTerminal != null
-          ? openTerminal
-          : action == null
-          ? null
-          : AppButton(
-              label: action,
-              compact: true,
-              kind: AppButtonKind.secondary,
-              onPressed: () => unawaited(session.reattach()),
-            ),
+          ? (retryButton == null
+                ? openTerminal
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      openTerminal,
+                      const SizedBox(width: Gap.xs),
+                      retryButton,
+                    ],
+                  ))
+          : retryButton,
     );
   }
 

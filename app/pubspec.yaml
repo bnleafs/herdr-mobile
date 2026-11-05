@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Android versionCode is the number after '+'. It must only ever increase and
 # must stay above 5036: development builds before the public 0.1.0 reached
 # 5036, and a lower code is refused as a downgrade by phones that have one.
-version: 0.1.53+5090
+version: 0.1.54+5091
 
 environment:
   sdk: ^3.13.5
@@ -93,6 +93,8 @@ dependencies:
   # GitHub serves release files as downloads (attachment, octet-stream), so a
   # browser saves the .mp4 instead of playing it; the player streams it.
   video_player: ^2.14.1
+  sentry_flutter: ^10.3.0
+  posthog_flutter: ^5.59.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

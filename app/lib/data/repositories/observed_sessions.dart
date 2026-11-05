@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import '../models/herdr_models.dart' show Pane;
 import '../observed/observed_kind.dart';
+import '../../fork/telemetry/envelope.dart';
+import '../../fork/telemetry/telemetry.dart';
 import 'fleet_repository.dart';
 import 'machine_connection.dart';
 import 'observed_session.dart';
@@ -72,7 +74,23 @@ class ObservedSessions extends ChangeNotifier {
   void markUnlinked(MachineConnection machine, String paneId) {
     final pane = machine.paneById(paneId);
     _unlinked['${machine.profile.id}/$paneId'] = (at: DateTime.now(), session: _sessionSig(pane));
+    ForkTelemetry.instance.recordStage(opId: ForkTelemetry.instance.generateOpId(), stage: TelemetryStage.fallback);
     notifyListeners();
+  }
+
+  /// Clears the unlinked latch for [paneId] on [machine].
+  void clearUnlinked(MachineConnection machine, String paneId) {
+    if (_unlinked.remove('${machine.profile.id}/$paneId') != null) {
+      notifyListeners();
+    }
+  }
+
+  /// Whether [paneId] on [machine] is currently latched as unlinked.
+  bool isUnlinkedLatched(MachineConnection? machine, String paneId) {
+    if (machine == null) return false;
+    final pane = machine.paneById(paneId);
+    final bad = _unlinked['${machine.profile.id}/$paneId'];
+    return bad != null && bad.session == _sessionSig(pane) && DateTime.now().difference(bad.at) < unlinkedFor;
   }
 
   /// The pane's session when there is one: kept while a screen holds it or the

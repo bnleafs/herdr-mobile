@@ -23,6 +23,8 @@ import '../observed/observed_contracts.dart';
 import '../observed/observed_kind.dart';
 import '../observed/omp_ask_driver.dart' show AskDone, AskMismatch, AskSend;
 import '../observed/session_log_locator.dart';
+import '../../fork/telemetry/envelope.dart';
+import '../../fork/telemetry/telemetry.dart';
 import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransportException;
 import '../services/disk_cache.dart';
 import 'acp_agent_session.dart' show defaultRetryJitter;
@@ -261,6 +263,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   Timer? _idleTimer;
 
   // The follow.
+  String _opId = ForkTelemetry.instance.generateOpId();
+  String get opId => _opId;
   int _epoch = 0;
   bool _following = false;
   String? _followedPath;
@@ -1208,8 +1212,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   bool _alive(int epoch) => !_disposed && epoch == _epoch;
 
   Future<void> _follow(int epoch) async {
+    _opId = ForkTelemetry.instance.generateOpId();
     var attempt = 0;
     var locateDelay = _locateEvery;
+    var recordedWaiting = false;
     try {
       while (_alive(epoch)) {
         if (!machine.isLive) {
@@ -1228,6 +1234,10 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
               return;
             case NotYet(:final why):
               // The agent writes its file with the first message: wait, quietly.
+              if (!recordedWaiting) {
+                recordedWaiting = true;
+                ForkTelemetry.instance.recordStage(opId: _opId, stage: TelemetryStage.waitingAgent);
+              }
               _waiting = why;
               // The pane is there and the person may type: the first prompt is
               // what makes the agent write its file. An empty chat, not a
@@ -1242,6 +1252,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
               locateDelay = locateDelay * 2 > _locateMax ? _locateMax : locateDelay * 2;
               continue;
             case Located(:final path):
+              ForkTelemetry.instance.recordStage(opId: _opId, stage: TelemetryStage.transcriptLocate);
               locateDelay = _locateEvery;
               if (_waiting != null) {
                 _waiting = null;
@@ -1352,6 +1363,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     });
     return done.future;
   }
+
+  @visibleForTesting
+  void nudgeLocate() => _nudgeLocate();
 
   void _nudgeLocate() {
     final wake = _locateWake;
@@ -2509,6 +2523,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       _rosterTimer,
       _activeTimer,
       _flushTimer,
+      _retryTimer,
     ]) {
       t?.cancel();
     }
@@ -2518,6 +2533,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     _waiters.clear();
     final wake = _machineWake;
     if (wake != null && !wake.isCompleted) wake.complete();
+    final locateWake = _locateWake;
+    if (locateWake != null && !locateWake.isCompleted) locateWake.complete();
     super.dispose();
   }
 }

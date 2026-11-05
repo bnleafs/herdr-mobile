@@ -118,11 +118,19 @@ Finder _button(String label) => find.widgetWithText(AppButton, label);
 
 void main() {
   group('the plus on the Agents tab', () {
-    testWidgets('opens the new agent session form at once, with no menu in between', (tester) async {
+    testWidgets('opens the New chooser, and its Agent session action opens the new agent session form', (tester) async {
       final h = await _env();
       await _pump(tester, h, const HomeShell());
 
       await tester.tap(find.byTooltip('New agent session'));
+      await _flush(tester);
+
+      expect(find.text('New'), findsOneWidget);
+      expect(find.text('Agent session'), findsOneWidget);
+      expect(find.text('Terminal'), findsOneWidget);
+      expect(find.byType(NewAgentSessionScreen), findsNothing, reason: 'the chooser comes first');
+
+      await tester.tap(find.text('Agent session'));
       await _flush(tester);
 
       expect(find.byType(NewAgentSessionScreen), findsOneWidget);

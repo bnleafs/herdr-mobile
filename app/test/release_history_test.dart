@@ -8,7 +8,7 @@ import 'package:herdr_mobile/data/models/release_history.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/settings/release_history_screen.dart';
 
-const _sample = '''
+final _sample = '''
 # Changelog
 
 Intro text.
@@ -19,7 +19,7 @@ Intro text.
 
 ## [0.2.0] - 2026-11-01
 
-[![Watch what's new · 1 change · 0:10 · 3 MB](https://github.com/tuan3w/herdr-mobile/releases/download/v0.2.0/0.2.0-whats-new.jpg)](https://github.com/tuan3w/herdr-mobile/releases/download/v0.2.0/0.2.0-whats-new.mp4)
+[![Watch what's new · 1 change · 0:10 · 3 MB]($appRepositoryUrl/releases/download/v0.2.0/0.2.0-whats-new.jpg)]($appRepositoryUrl/releases/download/v0.2.0/0.2.0-whats-new.mp4)
 
 ### Pictures stay on the phone
 

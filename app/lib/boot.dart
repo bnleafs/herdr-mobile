@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatf
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'fork/telemetry/envelope.dart';
+import 'fork/telemetry/telemetry.dart';
 import 'app.dart';
 import 'data/repositories/agent_screens.dart';
 import 'data/repositories/agent_session_repository.dart';
@@ -52,6 +54,12 @@ Future<void> launchApp({Future<Widget> Function() boot = bootApp, void Function(
     show(await boot());
   } on Object catch (e, s) {
     debugPrint('herdr: could not start: $e\n$s');
+    ForkTelemetry.instance.recordError(
+      opId: ForkTelemetry.instance.generateOpId(),
+      stage: TelemetryStage.boot,
+      error: e,
+      stackTrace: s,
+    );
     show(
       BootFailedApp(
         error: e,
@@ -136,6 +144,7 @@ Future<HerdrMobileApp> bootApp({
   ConnectionFactory? connect,
   Notifier? notifier,
 }) async {
+  await ForkTelemetry.instance.init();
   final machines = MachineRepository(profiles: PrefsProfileStore(), secrets: secrets ?? KeychainSecretStore());
   await machines.load();
   // The keychain starts on every machine's secrets now, while the rest of the

@@ -308,7 +308,7 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
     child: ListenableBuilder(
       listenable: widget.appSettings,
       builder: (context, _) => MaterialApp(
-        title: 'herdr',
+        title: 'megawatt',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(terminal: widget.appSettings.darkTerminal ? TerminalPalette.dark : null),
         darkTheme: AppTheme.dark(),

@@ -13,6 +13,8 @@ import '../../../data/repositories/app_settings.dart';
 import '../../../data/repositories/attention_set.dart';
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/observed_sessions.dart';
+import '../../../fork/telemetry/envelope.dart';
+import '../../../fork/telemetry/telemetry.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -329,9 +331,16 @@ Widget? _screenFor(
     case PaneAgent(:final machineId, :final paneId):
       if (view == AgentView.chat) {
         final machine = context.read<FleetRepository>().connection(machineId);
-        final session = machine == null ? null : context.read<ObservedSessions?>()?.forPane(machine, paneId);
+        final sessions = context.read<ObservedSessions?>();
+        final session = machine == null ? null : sessions?.forPane(machine, paneId);
         if (session != null) return AgentSessionScreen(session: session, agent: agent);
         if (strict) return null;
+        if (sessions?.isUnlinkedLatched(machine, paneId) ?? false) {
+          ForkTelemetry.instance.recordStage(
+            opId: ForkTelemetry.instance.generateOpId(),
+            stage: TelemetryStage.fallback,
+          );
+        }
       }
       if (strict && context.read<FleetRepository>().connection(machineId) == null) return null;
       return PaneScreen(agent: agent);

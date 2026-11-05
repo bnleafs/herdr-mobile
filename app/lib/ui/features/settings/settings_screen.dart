@@ -593,6 +593,15 @@ class _UpdateRows extends StatelessWidget {
             value: update.autoCheck,
             onChanged: (on) => unawaited(update.setAutoCheck(on)),
           ),
+          ToggleRow(
+            id: 'auto-download',
+            title: 'Download automatically',
+            subtitle:
+                'Downloads a verified APK when a newer version is found. '
+                'You still confirm the installation.',
+            value: update.autoDownload,
+            onChanged: (on) => unawaited(update.setAutoDownload(on)),
+          ),
         ],
       );
     },

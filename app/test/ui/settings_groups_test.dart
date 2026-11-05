@@ -33,7 +33,7 @@ import '../support/settings_support.dart';
 import '../support/shot.dart' show loadAppFonts;
 import '../support/update_fakes.dart';
 
-const _base = 'https://github.com/tuan3w/herdr-mobile/releases/download/v99.0.0';
+const _base = 'https://github.com/$appRepository/releases/download/v99.0.0';
 
 ReleaseInfo _release({String notes = '### One new thing\n\nIt does what it says.'}) => ReleaseInfo(
   version: '99.0.0',
@@ -48,16 +48,18 @@ ReleaseInfo _release({String notes = '### One new thing\n\nIt does what it says.
 ({AppUpdate update, FakeReleaseFeed feed, FakeReleaseFiles files, FakeApkInstaller installer}) _updater(
   WidgetTester tester, {
   ReleaseInfo? release,
+  bool autoDownload = false,
 }) {
   final feed = FakeReleaseFeed()..answer = release ?? _release();
   final files = FakeReleaseFiles();
   final installer = FakeApkInstaller();
   final update = AppUpdate(
-    store: MemoryUpdateStore(),
+    store: MemoryUpdateStore(UpdateRecord(autoDownload: autoDownload)),
     feed: feed,
     files: files,
     installer: installer,
     current: AppVersion.tryParse('0.1.0'),
+    autoDownload: autoDownload,
   );
   addTearDown(update.dispose);
   return (update: update, feed: feed, files: files, installer: installer);
@@ -527,6 +529,60 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(QuickPhrasesPage), findsNothing);
       expect(find.text('Open agents as'), findsOneWidget, reason: 'back where it was');
+    });
+  });
+
+  group('update settings UI controls', () {
+    testWidgets('shows auto-download toggle in About, toggles setting, and executes manual check/ready install flow', (
+      tester,
+    ) async {
+      final u = _updater(tester, autoDownload: true);
+      await _pump(tester, update: u.update);
+
+      // Open About group:
+      await openSettingsGroup(tester, 'About');
+      expect(find.text('Download automatically'), findsOneWidget);
+      expect(
+        find.text('Downloads a verified APK when a newer version is found. You still confirm the installation.'),
+        findsOneWidget,
+      );
+
+      // Verify toggle is on:
+      expect(u.update.autoDownload, isTrue);
+
+      // Toggle off:
+      await tester.tap(find.text('Download automatically'));
+      await tester.pump();
+      expect(u.update.autoDownload, isFalse);
+
+      // Toggle back on:
+      await tester.tap(find.text('Download automatically'));
+      await tester.pump();
+      expect(u.update.autoDownload, isTrue);
+
+      // Manual check action:
+      await tester.tap(find.text('Check for updates'));
+      await tester.pump();
+
+      // Because autoDownload is true, download begins automatically:
+      expect(u.update.stage, UpdateStage.downloading);
+      expect(find.textContaining('Downloading'), findsWidgets);
+
+      // Complete download:
+      u.files.running!.complete(File('/x.apk'));
+      await tester.pump();
+      await tester.pump();
+
+      // UI reflects Ready to install:
+      expect(u.update.stage, UpdateStage.ready);
+      expect(find.text('Ready to install'), findsOneWidget);
+
+      // Open update sheet from banner and tap Install:
+      await _openSheet(tester);
+      expect(find.text('Install 99.0.0'), findsOneWidget);
+      await tester.tap(find.text('Install 99.0.0'));
+      await tester.pump();
+      expect(u.installer.installed, ['/x.apk']);
     });
   });
 }

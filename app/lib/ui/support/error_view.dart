@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:herdr_mobile/fork/telemetry/telemetry.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 /// Flutter's release-mode answer to a widget that throws while building is a
@@ -54,6 +55,7 @@ void reportFlutterError(FlutterErrorDetails details) {
   if (_reported.length < 200 && _reported.add(text)) {
     debugPrint('herdr: ${details.library ?? 'flutter'}: $text');
   }
+  ForkTelemetry.instance.recordFlutterError(details);
 }
 
 /// Replaces the gray box of a widget that failed to build, and makes the log

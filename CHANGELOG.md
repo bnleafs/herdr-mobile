@@ -4,6 +4,34 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.54] - 2026-11-06
+
+### Megawatt: new name and icon, terminals from the home +, automatic updates, and chat that survives Claude's trust prompt
+
+- **Megawatt**: the app is now called megawatt, with its own icon. The package
+  and signing are unchanged, so it installs over the previous fork build.
+- **Terminal from the home +**: the + on the Agents board offers Agent session
+  or Terminal; Terminal picks a machine (offline ones are marked) and then a
+  folder, and opens a plain terminal there.
+- **Automatic updates**: the app checks this fork's releases and, with
+  "Download automatically" on (the default), downloads and verifies a newer
+  version by itself. Android still asks you to confirm the install.
+- **Chat after the trust prompt**: when Claude Code is still starting (for
+  example while it asks whether to trust the folder), the chat waits for it for
+  up to 90 seconds instead of failing and sending you to the terminal. A chat
+  that still cannot read its session now offers Retry beside the terminal.
+- **Diagnostics**: optional Sentry and PostHog reporting of fixed stage and
+  error codes only, never prompts, paths, terminal text or raw errors. It is
+  off unless the build carries its keys.
+
+**Limitations & unverified scope**
+
+- The trust-prompt recovery is reproduced and fixed against a synthetic test,
+  not yet confirmed on the Oracle host.
+- While the chat says Claude is starting, a message sent from it reaches the
+  terminal, which may still be showing the trust prompt.
+- Launcher icon rendering and the update download are unverified on a handset.
+
 ## [0.1.53] - 2026-11-05
 
 ### Folder workspaces, plain terminal creation, and send-button-only composers

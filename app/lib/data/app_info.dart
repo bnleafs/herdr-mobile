@@ -2,11 +2,11 @@
 /// `pubspec.yaml` (without the `+build` number) because the app does not read
 /// its own manifest; `test/app_info_test.dart` fails when the two disagree, so
 /// bump both together.
-const appVersion = '0.1.53';
+const appVersion = '0.1.54';
 
 /// Where the source and releases live, as `owner/name`.
 // Forks set it at build time: --dart-define=APP_REPOSITORY=owner/name.
-const appRepository = String.fromEnvironment('APP_REPOSITORY', defaultValue: 'tuan3w/herdr-mobile');
+const appRepository = String.fromEnvironment('APP_REPOSITORY', defaultValue: 'bnleafs/herdr-mobile');
 
 /// The repository's page.
 const appRepositoryUrl = 'https://github.com/$appRepository';

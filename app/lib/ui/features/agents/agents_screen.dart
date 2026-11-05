@@ -17,10 +17,10 @@ import '../machines/approval_button.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
+import '../../../fork/home_creation.dart';
 import '../../shell/home_pages.dart';
 import '../../support/step_clock.dart';
 import '../../support/tap_guard.dart';
-import '../create/new_agent_session_screen.dart';
 import '../machines/machine_form_screen.dart';
 import 'agent_card.dart';
 import 'agent_more_row.dart';
@@ -157,7 +157,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
 
   void _addMachine() => openMachineForm(context);
 
-  void _newSession() => unawaited(openNewAgentSession(context));
+  void _newSession() => unawaited(showHomeCreationChooser(context));
 
   void _showMachines() => widget.pages.open(context, HomePage.machines);
 

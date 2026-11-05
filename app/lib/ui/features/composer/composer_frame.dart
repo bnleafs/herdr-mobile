@@ -116,13 +116,13 @@ class ComposerField extends StatelessWidget {
     this.focusNode,
     required this.enabled,
     required this.hint,
-    required this.onSubmit,
     this.mono = false,
     this.maxLines = 5,
     this.inputFormatters = const [],
     this.autocorrect = true,
     this.enableSuggestions = true,
     this.keyboardType,
+    this.textInputAction,
     this.hasLeading = true,
     this.keyboardOnPointerDown = true,
   });
@@ -133,7 +133,6 @@ class ComposerField extends StatelessWidget {
   final FocusNode? focusNode;
   final bool enabled;
   final String hint;
-  final VoidCallback onSubmit;
 
   /// A shell's line stays in the terminal's font; an agent's prompt is prose.
   final bool mono;
@@ -144,6 +143,7 @@ class ComposerField extends StatelessWidget {
   final bool autocorrect;
   final bool enableSuggestions;
   final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
 
   /// Whether a button stands at the field's left (less padding there).
   final bool hasLeading;
@@ -175,11 +175,11 @@ class ComposerField extends StatelessWidget {
         enabled: enabled,
         minLines: 1,
         maxLines: maxLines,
-        textInputAction: TextInputAction.send,
-        keyboardType: keyboardType,
-        // Not onSubmitted: a send action given only that unfocuses the field
-        // and drops the keyboard after every message.
-        onEditingComplete: onSubmit,
+        // Message fields use multiline newline editing: Enter/Shift+Enter
+        // inserts a line break and never dispatches; only the app Send button
+        // dispatches.
+        textInputAction: textInputAction ?? TextInputAction.newline,
+        keyboardType: keyboardType ?? TextInputType.multiline,
         strutStyle: StrutStyle.fromTextStyle(Type.body, height: composerLineHeight, forceStrutHeight: true),
         style: mono
             ? Mono.input.copyWith(height: m.lineHeightPx / Mono.input.fontSize!, color: color)

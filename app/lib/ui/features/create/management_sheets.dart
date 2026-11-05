@@ -118,7 +118,7 @@ Future<void> showWorkspaceActions(BuildContext context, MachineConnection machin
     actions: [
       if (worktree != null)
         SheetAction(label: 'New agent session here', icon: LucideIcons.plus, onTap: () => newSessionHere(worktree)),
-      SheetAction(label: 'New tab here', icon: LucideIcons.plus, onTap: newTab),
+      SheetAction(label: 'New terminal here', icon: LucideIcons.terminal, onTap: newTab),
       SheetAction(label: 'Rename', icon: LucideIcons.pencil, onTap: rename),
       if (worktree != null && worktree.isLinked)
         SheetAction(

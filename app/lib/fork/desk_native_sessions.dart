@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/acp/agent_host.dart';
 import '../data/acp/past_session.dart';
+import '../data/models/places.dart';
 import '../data/models/remote_file.dart';
 import '../data/repositories/agent_screens.dart';
 import '../data/repositories/agent_session.dart';
@@ -89,24 +90,12 @@ class DeskNativeSessions implements AgentSessions {
   }
 
   Future<AgentSessionView> _startClaude({required MachineConnection machine, required String cwd}) async {
-    String paneId;
-    try {
-      final wid = _findWorkspaceForCwd(machine, cwd);
-      if (wid != null) {
-        final tab = await machine.api.createTab(
-          workspaceId: wid,
-          cwd: cwd,
-          label: 'Claude Code · ${RemotePath.basename(cwd)}',
-          focus: false,
-        );
-        paneId = tab.rootPaneId;
-      } else {
-        final ws = await machine.api.createWorkspace(cwd: cwd, label: 'Phone sessions', focus: false);
-        paneId = ws.rootPaneId;
-      }
-    } on Exception catch (e) {
-      throw AgentHostException(_mapError(e, machine));
-    }
+    final paneId = await allocateNativeShellPane(
+      machine: machine,
+      cwd: cwd,
+      tabLabel: 'Claude Code · ${RemotePath.basename(cwd)}',
+      startingAgent: true,
+    );
 
     try {
       await machine.api.sendLine(paneId, deskCommand);
@@ -124,34 +113,6 @@ class DeskNativeSessions implements AgentSessions {
       );
     }
     return session;
-  }
-
-  String? _findWorkspaceForCwd(MachineConnection machine, String cwd) {
-    final here = cwd.endsWith('/') ? cwd.substring(0, cwd.length - 1) : cwd;
-    String? bestWid;
-    var bestLen = -1;
-
-    for (final w in machine.snapshot.workspaces) {
-      final wt = w.worktree;
-      if (wt == null || !wt.isLinked) continue;
-      final rawPath = wt.checkoutPath;
-      if (rawPath.isEmpty) continue;
-      final checkoutPath = rawPath.endsWith('/') ? rawPath.substring(0, rawPath.length - 1) : rawPath;
-      if (here == checkoutPath || here.startsWith('$checkoutPath/')) {
-        if (checkoutPath.length > bestLen) {
-          bestWid = w.id;
-          bestLen = checkoutPath.length;
-        }
-      }
-    }
-    if (bestWid != null) return bestWid;
-
-    for (final w in machine.snapshot.workspaces) {
-      if (w.label == 'Phone sessions') {
-        return w.id;
-      }
-    }
-    return null;
   }
 
   Future<void> _waitForClaude(MachineConnection machine, String paneId) async {
@@ -232,4 +193,151 @@ class DeskNativeSessions implements AgentSessions {
     }
     return e.toString();
   }
+}
+
+/// Allocates and verifies a new shell pane in [cwd] on [machine] following the shared
+/// placement contract:
+/// - Reuses an existing matching checkout workspace or exact-cwd plain workspace with an
+///   unfocused tab (focus: false).
+/// - If unmatched, creates a new unfocused workspace (focus: false) named after the
+///   folder basename and reuses its initial root pane.
+/// Verifies the target directory before returning the pane ID.
+/// Does NOT send any startup command into the shell, and does NOT auto-close or
+/// delete the shell on mismatch or error.
+Future<String> allocateNativeShellPane({
+  required MachineConnection machine,
+  required String cwd,
+  String? tabLabel,
+  bool startingAgent = false,
+}) async {
+  if (!machine.isLive) {
+    throw AgentHostException('The connection to ${machine.profile.label} was lost.');
+  }
+
+  String paneId;
+  String? createdCwd;
+  try {
+    final wid = findWorkspaceForCwd(machine, cwd);
+    if (wid != null) {
+      final tab = await machine.api.createTab(workspaceId: wid, cwd: cwd, label: tabLabel, focus: false);
+      paneId = tab.rootPaneId;
+      createdCwd = machine.paneById(paneId)?.cwd;
+    } else {
+      final ws = await machine.api.createWorkspace(cwd: cwd, label: RemotePath.basename(cwd), focus: false);
+      paneId = ws.rootPaneId;
+      createdCwd = ws.cwd ?? machine.paneById(paneId)?.cwd;
+    }
+  } on Exception catch (e) {
+    throw AgentHostException(mapCreationError(e, machine));
+  }
+
+  if (createdCwd == null) {
+    var pane = machine.paneById(paneId);
+    if (pane == null || pane.cwd == null) {
+      try {
+        await machine.refresh().timeout(Dwell.refreshTimeout);
+      } on Exception {
+        // Bounded check best-effort
+      }
+      pane = machine.paneById(paneId);
+    }
+    createdCwd = pane?.cwd;
+  }
+
+  final agentNotice = startingAgent ? ' A shell was opened, but no agent was started.' : '';
+
+  if (createdCwd == null) {
+    throw AgentHostException('Could not verify working directory on ${machine.profile.label}: $cwd.$agentNotice');
+  }
+
+  if (!isMatchingPath(createdCwd, cwd)) {
+    throw AgentHostException(
+      'Directory does not exist on ${machine.profile.label}: $cwd (host opened $createdCwd).$agentNotice',
+    );
+  }
+
+  if (machine.paneById(paneId) == null) {
+    try {
+      await machine.refresh().timeout(Dwell.refreshTimeout);
+    } on Exception {
+      // Best-effort cache synchronization
+    }
+  }
+
+  return paneId;
+}
+
+/// Resolves an existing workspace for [cwd] on [machine]:
+/// 1. Deepest matching checkout workspace (primary or linked), excluding legacy 'Phone sessions'.
+/// 2. Deterministic lowest workspace ID tie-break among equal specificity checkout matches.
+/// 3. Exact matching plain workspace cwd, excluding legacy 'Phone sessions'.
+/// 4. Deterministic lowest workspace ID tie-break among plain workspace matches.
+String? findWorkspaceForCwd(MachineConnection machine, String cwd) {
+  final allPlace = PlaceIndex.of(machine.snapshot).of(cwd);
+  if (allPlace != null) {
+    final deepestPath = allPlace.checkoutPath;
+    final matchingCheckouts = [
+      for (final w in machine.snapshot.workspaces)
+        if (w.label != 'Phone sessions' &&
+            w.worktree != null &&
+            normalizePath(w.worktree!.checkoutPath) == normalizePath(deepestPath))
+          w,
+    ];
+    if (matchingCheckouts.isNotEmpty) {
+      matchingCheckouts.sort((a, b) => a.id.compareTo(b.id));
+      return matchingCheckouts.first.id;
+    }
+  }
+
+  final targetCwd = normalizePath(cwd);
+  final matchingPlain = [
+    for (final w in machine.snapshot.workspaces)
+      if (w.label != 'Phone sessions' &&
+          w.worktree == null &&
+          machine.snapshot.panes.any(
+            (p) => p.workspaceId == w.id && p.cwd != null && normalizePath(p.cwd!) == targetCwd,
+          ))
+        w,
+  ];
+  if (matchingPlain.isNotEmpty) {
+    matchingPlain.sort((a, b) => a.id.compareTo(b.id));
+    return matchingPlain.first.id;
+  }
+  return null;
+}
+
+String normalizePath(String path) {
+  if (path.length <= 1) return path;
+  var end = path.length;
+  while (end > 1 && path.codeUnitAt(end - 1) == 0x2F /* '/' */ ) {
+    end--;
+  }
+  return path.substring(0, end);
+}
+
+bool isMatchingPath(String actual, String target) {
+  final normActual = normalizePath(actual);
+  final normTarget = normalizePath(target);
+  // shortcut: legitimate symlink aliases fail closed, until authoritative canonicalisation exists.
+  return normActual == normTarget;
+}
+
+String mapCreationError(Object e, MachineConnection machine) {
+  if (e is HerdrUnsupportedException) {
+    final v = machine.snapshot.version;
+    return 'herdr${v.isEmpty ? '' : ' $v'} on ${machine.profile.label} can’t do this. '
+        'Update herdr on that machine.';
+  }
+  if (e is HerdrApiException) {
+    return e.message;
+  }
+  if (e is TimeoutException) {
+    return 'Creation timed out on ${machine.profile.label}. '
+        'A tab or workspace may have been created; check the machine before trying again.';
+  }
+  if (e is HerdrTransportException) {
+    return 'Connection interrupted during creation on ${machine.profile.label}: ${e.message}. '
+        'A tab or workspace may have been created; check the machine before trying again.';
+  }
+  return e.toString();
 }

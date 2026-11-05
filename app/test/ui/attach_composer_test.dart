@@ -303,29 +303,61 @@ void main() {
       expect(find.text('Files are unavailable on this machine'), findsOneWidget);
     });
 
-    testWidgets('is offered to an agent in a terminal, not to a subagent run, and is dimmed while the link is down', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        FakeAgentSession()
-          ..observed = true
-          ..mode = AttachMode.paths,
-      );
-      expect(attachButton, findsOneWidget);
-      await pump(
-        tester,
-        FakeAgentSession()
-          ..observed = true
-          ..mode = AttachMode.none,
-      );
-      expect(attachButton, findsNothing);
+    testWidgets(
+      'is offered to an agent in a terminal, not to a subagent run, and is unavailable when the link has ended',
+      (tester) async {
+        await pump(
+          tester,
+          FakeAgentSession()
+            ..observed = true
+            ..mode = AttachMode.paths,
+        );
+        expect(attachButton, findsOneWidget);
+        await pump(
+          tester,
+          FakeAgentSession()
+            ..observed = true
+            ..mode = AttachMode.none,
+        );
+        expect(attachButton, findsNothing);
 
-      final down = FakeAgentSession(link: AgentLink.reconnecting);
-      await pump(tester, down);
+        final picker = FakePicker()..gallery.add(photo());
+        final ended = FakeAgentSession(link: AgentLink.ended);
+        await pump(tester, ended, picker: picker);
+        await tester.tap(attachButton);
+        await settle(tester);
+        expect(find.byType(AttachTabBar), findsNothing);
+        expect(picker.asked, 0);
+        await tester.tap(find.byIcon(LucideIcons.arrowUp));
+        await settle(tester);
+        expect(ended.sentBlocks, isEmpty);
+      },
+    );
+
+    testWidgets('attach and editor are available for offline drafting while reconnecting', (tester) async {
+      final session = FakeAgentSession(link: AgentLink.reconnecting);
+      final picker = FakePicker()..gallery.add(photo());
+      await pump(tester, session, picker: picker);
+
+      expect(attachButton, findsOneWidget);
       await tester.tap(attachButton);
       await settle(tester);
-      expect(find.byType(AttachTabBar), findsNothing);
+      expect(find.byType(AttachTabBar), findsOneWidget);
+
+      await tester.tap(find.text('Open the system picker'));
+      await settle(tester);
+      await settle(tester);
+      expect(picker.asked, 1);
+      expect(find.descendant(of: chips, matching: find.text('IMG_2031.jpg')), findsOneWidget);
+
+      await tester.enterText(field, 'drafting offline');
+      await tester.pump();
+      expect(find.text('drafting offline'), findsOneWidget);
+
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
+      await settle(tester);
+      expect(session.sentBlocks, isEmpty, reason: 'offline drafting does not dispatch while reconnecting');
+      expect(session.sent, isEmpty);
     });
   });
 

@@ -244,7 +244,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Workspace actions').first);
       await _flush(tester);
-      expect(find.text('New tab here'), findsOneWidget);
+      expect(find.text('New terminal here'), findsOneWidget);
       await tester.tap(find.text('Rename'));
       await _flush(tester);
 
@@ -372,7 +372,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Workspace actions').first);
       await _flush(tester);
-      await tester.tap(find.text('New tab here'));
+      await tester.tap(find.text('New terminal here'));
       await _flush(tester);
 
       expect(t.paramsOf('tab.create').single, {'workspace_id': 'w1', 'cwd': '/work/w1', 'focus': false});
@@ -604,7 +604,8 @@ void main() {
       await tester.tap(find.text('open actions'));
       await _flush(tester);
 
-      expect(find.text('New tab here'), findsOneWidget);
+      expect(find.text('New terminal here'), findsOneWidget);
+      expect(find.text('New tab here'), findsNothing);
       expect(find.text('Close workspace'), findsOneWidget);
       expect(find.text('New agent session here'), findsNothing);
       expect(find.text('Remove worktree'), findsNothing);

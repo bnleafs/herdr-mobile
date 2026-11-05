@@ -424,27 +424,12 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
     });
   }
 
-  /// Whether the question's chips are on screen (what the build draws them for).
-  bool get _asking =>
-      widget.agent.status == AgentStatus.blocked && !widget.agent.stale && _handle.preview.value?.prompt != null;
-
-  /// The keyboard's Send. On an empty field it is a bare Enter, and a bare
-  /// Enter while a question is shown would choose whatever the agent has
-  /// highlighted, past the chips' hold and guard: it is refused with a toast
-  /// (as the pane screen does), and otherwise waits for the guard and a free
-  /// controller like the Enter key button does. Typed text is deliberate, and
-  /// is not a tap on something that moved: it only needs a live agent.
+  /// The app's Send button. Sends deliberate typed text as a line to the agent.
+  /// Empty or whitespace text does nothing.
   Future<void> _submit() async {
     if (widget.agent.stale || _reply.busy) return;
     final text = _input.text;
-    if (text.trim().isEmpty) {
-      if (!settled) return;
-      if (_asking) {
-        Haptics.failed();
-        showToast(context, 'Pick an answer above');
-        return;
-      }
-    }
+    if (text.trim().isEmpty) return;
     final sent = await _reply.sendLine(text);
     if (sent && mounted && _input.text == text) _input.clear();
     _answered(sent);
@@ -535,12 +520,10 @@ class _AgentReplyState extends State<AgentReply> with TapGuardState<AgentReply>,
         ComposerFrame(
           field: ComposerField(
             controller: _input,
-            enabled: live,
+            enabled: true,
             hint: composerHint(agentName(a.machine.paneById(a.paneId)?.agent), linkWord: live ? null : 'Offline'),
-            onSubmit: _submit,
-            // A line for the agent's prompt, in the terminal's font.
+            // A prompt for the agent, in the terminal's font.
             mono: true,
-            maxLines: 1,
             autocorrect: false,
             enableSuggestions: false,
             hasLeading: false,

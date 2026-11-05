@@ -138,6 +138,7 @@ void main() {
     }
 
     Finder field() => find.byType(TextField).last;
+    Finder sendButton() => find.byKey(const ValueKey('send'));
 
     Future<void> type(WidgetTester tester, String text) async {
       await tester.enterText(field(), text);
@@ -145,8 +146,10 @@ void main() {
     }
 
     Future<void> send(WidgetTester tester) async {
-      // The keyboard's send key: the arrow is a stop while the agent works.
+      // The keyboard's send action no longer dispatches messages; real app Send button does.
       await tester.testTextInput.receiveAction(TextInputAction.send);
+      await settleHistory(tester, 1);
+      await tester.tap(sendButton());
       await settleHistory(tester, 3);
     }
 
@@ -163,7 +166,14 @@ void main() {
       final s = session();
       final e = await open(tester, s);
       await type(tester, '/clera now');
-      await send(tester);
+      // Assert that keyboard action produces zero dispatch before explicit Send tap
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await settleHistory(tester, 1);
+      expect(s.sent, isEmpty, reason: 'keyboard send does not dispatch');
+      expect(find.text('Send as message'), findsNothing, reason: 'keyboard send does not trigger guard banner');
+
+      await tester.tap(sendButton());
+      await settleHistory(tester, 3);
 
       expect(s.sent, isEmpty);
       expect(fieldText(tester), '/clera now', reason: 'nothing is lost');

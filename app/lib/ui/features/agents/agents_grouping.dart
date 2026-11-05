@@ -10,6 +10,7 @@ import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/machine_connection.dart';
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/elapsed.dart';
+import '../../../fork/continuity_presentation.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart' show AgentStatusColor;
 
@@ -128,7 +129,8 @@ class AgentsOverview {
       troubled: [
         for (final c in connections)
           // A machine the person switched off is not a problem to fix.
-          if (c.state != LinkState.online && c.state != LinkState.disabled)
+          // Nor is a normal reconnect with retained data and no actionable error.
+          if (c.state != LinkState.online && c.state != LinkState.disabled && !isTransientReconnect(c))
             (machine: c, label: c.profile.label, state: c.state, error: c.error, approvalUrl: c.approvalUrl),
       ],
     );

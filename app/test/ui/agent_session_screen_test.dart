@@ -14,6 +14,7 @@ import 'package:herdr_mobile/data/models/slash_command.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/agents/agent_navigation.dart';
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
+import 'package:herdr_mobile/ui/features/composer/composer_frame.dart' show ComposerRoundButton;
 import 'package:herdr_mobile/ui/features/composer/command_model.dart';
 import 'package:herdr_mobile/ui/features/agent_session/diff_lines.dart';
 import 'package:herdr_mobile/ui/features/agent_session/plan_header.dart';
@@ -590,17 +591,72 @@ void main() {
       expect(session.sent, isEmpty);
     });
 
-    testWidgets('the keyboard Send on an agent in a terminal that is mid-turn says why and keeps the text', (
-      tester,
-    ) async {
+    testWidgets('keyboard actions send nothing and keep the text', (tester) async {
       final session = FakeAgentSession(state: stateWith(turnActive: true))..observed = true;
       await pumpScreen(tester, session);
       await tester.enterText(find.byType(TextField), 'fix the build');
+      // Keyboard actions (send, done, newline) and hardware key events send nothing
       await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.testTextInput.receiveAction(TextInputAction.newline);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
       await tester.pump();
-      expect(session.sent, isEmpty);
-      expect(find.textContaining('working'), findsOneWidget, reason: 'a toast says why nothing went');
+      expect(session.sent, isEmpty, reason: 'keyboard actions must never dispatch');
       expect(composerField(tester).controller!.text, 'fix the build');
+    });
+
+    testWidgets('multiline draft with active composing text dispatches once via app Send button', (tester) async {
+      final session = FakeAgentSession();
+      await pumpScreen(tester, session);
+
+      final field = find.byType(TextField);
+      await tester.showKeyboard(field);
+
+      // Hardware enter where supported or multiline text editing inserts newline without dispatch
+      await tester.enterText(field, 'line 1\nline 2');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.testTextInput.receiveAction(TextInputAction.newline);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+      expect(session.sent, isEmpty, reason: 'keyboard actions must not dispatch');
+
+      // Focus blur does not dispatch
+      tester.widget<TextField>(field).focusNode?.unfocus();
+      await tester.pump();
+      expect(session.sent, isEmpty, reason: 'focus blur must not dispatch');
+
+      // Active non-empty composing region is included when user taps Send
+      await tester.showKeyboard(field);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(text: 'line 1\nline 2 composing', composing: TextRange(start: 14, end: 23)),
+      );
+      await tester.pump();
+
+      // Explicit app Send button dispatches exactly once with full text and line breaks preserved
+      final sendBtn = find.byIcon(LucideIcons.arrowUp);
+      await tester.tap(sendBtn);
+      await tester.pump();
+      expect(session.sent, ['line 1\nline 2 composing']);
+      expect(composerField(tester).controller!.text, isEmpty);
     });
 
     testWidgets('while the agent works the button stops it, once, and the keyboard cannot send', (tester) async {
@@ -640,11 +696,12 @@ void main() {
       expect(session.cancelCount, 1);
     });
 
-    testWidgets('is disabled with the reason unless the link is live', (tester) async {
+    testWidgets('field remains editable while reconnecting with send button disabled until live', (tester) async {
       final session = FakeAgentSession(link: AgentLink.reconnecting);
       await pumpScreen(tester, session);
-      expect(composerField(tester).enabled, isFalse);
+      expect(composerField(tester).enabled, isTrue);
       expect(find.text('Offline · reconnecting'), findsOneWidget);
+      expect(tester.widget<ComposerRoundButton>(find.byKey(const ValueKey('send'))).ready, isFalse);
 
       session.setLink(AgentLink.live);
       await tester.pump();

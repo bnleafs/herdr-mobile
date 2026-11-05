@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../../data/models/herdr_models.dart';
 import '../../../data/models/machine_layout.dart';
 import '../../../data/repositories/machine_connection.dart';
+import '../../../fork/terminal_creation.dart';
 import 'approval_button.dart';
 import '../../../data/words/place_name.dart';
 
@@ -121,6 +122,11 @@ class _MachineViewState extends State<_MachineView> {
                     tooltip: 'Browse files',
                     onPressed: () => openFileBrowser(context, machine),
                   ),
+                CircleButton(
+                  icon: LucideIcons.terminal,
+                  tooltip: 'New terminal',
+                  onPressed: machine.isLive ? () => unawaited(createTerminalFromChooser(context, machine)) : null,
+                ),
                 CircleButton(
                   icon: LucideIcons.plus,
                   tooltip: 'New agent session',

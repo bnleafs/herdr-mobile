@@ -332,6 +332,27 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   Timer? _blockedTimer;
   bool _blockedSettled = false;
   DateTime? _lastCancelAt;
+
+  /// What the person keeps on the phone to send once the turn has ended (a hold
+  /// on Send). Nothing goes into the pane from it while a turn runs.
+  final _queue = PromptQueue();
+
+  /// One queued message is being typed into the pane or waited for: the next
+  /// goes only after it was taken, so two are never in flight.
+  bool _dispatching = false;
+
+  /// The person asked to stop the turn while messages waited: when it has
+  /// stopped they go out together, as one message (see [_driveQueue]).
+  bool _stopSendsQueue = false;
+
+  /// Messages typed into the pane while a turn runs that the log does not show
+  /// yet, oldest first: the person sees them (as [QueuedState.sent] rows) until
+  /// the agent reads them. Replaced on every change.
+  List<QueuedMessage> _sent = const [];
+  var _nextSent = 1;
+  List<QueuedMessage>? _queuedView;
+  List<QueuedMessage>? _viewQueue;
+  List<QueuedMessage>? _viewSent;
   final _waiters = <_Waiter>[];
 
   // Preview watch, live output.
@@ -727,14 +748,31 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     };
   }
 
-  // An agent in a pane has its own composer: the terminal queues or steers as
-  // that agent does, and the phone only types into it. No queue, no login
-  // flow; pictures and files go as host paths (see [attachMode]).
+  // An agent in a pane has its own composer and its own queue; the phone types
+  // into it. While a turn runs a message goes in at once, as typing and Enter
+  // do there (omp steers it, Claude Code and Codex read it after the current
+  // tool call), and a hold on Send keeps it here instead: on the phone it can
+  // be seen, edited and taken back, and it goes out when the turn has ended.
+  // No login flow; pictures and files go as host paths (see [attachMode]).
   @override
-  SendDelivery get delivery => SendDelivery.now;
+  SendDelivery get delivery {
+    if (_isSub) return SendDelivery.now;
+    if (_queue.hasWaiting) return SendDelivery.queued;
+    return _turnRuns ? SendDelivery.steered : SendDelivery.now;
+  }
 
   @override
-  bool get canSteer => false;
+  bool get canSteer => !_isSub;
+
+  /// herdr says the agent works, and nothing says it only waits on a job.
+  bool get _turnRuns => _paneWorking && !waitingOnBackground;
+
+  bool get _paneWorking => !_isSub && machine.isLive && _pane?.status == AgentStatus.working;
+
+  /// The pane can take a prompt of its own now: an agent runs in it, no turn
+  /// runs and nothing asks.
+  bool get _takesPrompt =>
+      !_isSub && machine.isLive && _pane != null && !_exited && !_blocked && _pending == null && !_turnRuns;
 
   @override
   bool get acceptsImages => false;
@@ -747,16 +785,125 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   AttachMode get attachMode => _isSub ? AttachMode.none : AttachMode.paths;
 
   @override
-  List<QueuedMessage> get queued => const [];
+  List<QueuedMessage> get queued {
+    if (_sent.isEmpty) return _queue.entries;
+    if (!identical(_viewQueue, _queue.entries) || !identical(_viewSent, _sent)) {
+      _viewQueue = _queue.entries;
+      _viewSent = _sent;
+      _queuedView = [..._sent, ..._queue.entries];
+    }
+    return _queuedView!;
+  }
+
+  QueuedMessage _addSent(List<ContentBlock> blocks) {
+    final message = QueuedMessage(id: 's${_nextSent++}', blocks: blocks, at: _clock(), state: QueuedState.sent);
+    _sent = [..._sent, message];
+    _changed();
+    return message;
+  }
+
+  void _removeSent(String id) {
+    if (!_sent.any((m) => m.id == id)) return;
+    _sent = [
+      for (final m in _sent)
+        if (m.id != id) m,
+    ];
+    _changed();
+  }
 
   @override
-  void editQueued(String id, String text) {}
+  void editQueued(String id, String text) {
+    if (_queue.edit(id, text)) _changed();
+  }
 
   @override
-  void removeQueued(String id) {}
+  void removeQueued(String id) {
+    if (_queue.remove(id)) _queueChanged();
+  }
 
   @override
-  void resumeQueue() {}
+  void resumeQueue() {
+    if (!_queue.release()) return;
+    _changed();
+    _pump();
+  }
+
+  /// The queue changed: the screen is told, and a session nobody holds is
+  /// dropped for being unused only while nothing waits in it ([_armIdle]).
+  void _queueChanged() {
+    _changed();
+    _armIdle();
+  }
+
+  /// What waits on the phone follows the pane. A Stop the person asked for
+  /// sends it all at once when the turn has stopped (stopping a turn is going
+  /// on with what was queued behind it, as in an ACP session); otherwise it
+  /// goes one message at a time whenever the pane takes a prompt. The phone
+  /// cannot tell a turn stopped in the terminal from one that finished, so
+  /// both send what waits.
+  void _driveQueue() {
+    if (_isSub) return;
+    if (_queue.isEmpty) {
+      _stopSendsQueue = false;
+      return;
+    }
+    // The agent left the pane: a shell takes the keys now, and a message
+    // typed into it would run as a command.
+    if (_exited) {
+      if (_queue.holdAll('$agentLabel is not running in this pane any more. Resume to send it when it is.')) {
+        _changed();
+      }
+      return;
+    }
+    if (_turnRuns) return;
+    if (_stopSendsQueue) {
+      _stopSendsQueue = false;
+      if (_queue.mergeWaiting()) _changed();
+    }
+    _pump();
+  }
+
+  void _pump() {
+    if (_disposed || _detached || _dispatching || !_takesPrompt) return;
+    final next = _queue.firstWaiting;
+    if (next == null) return;
+    unawaited(_dispatch(next));
+  }
+
+  /// Types [next] into the pane. It is out of the queue while it goes (the
+  /// person cannot edit or remove what is already being typed, and a Stop's
+  /// merge does not take it) and comes back, first and held, with the reason,
+  /// when the pane did not take it or the log did not show it. What waits
+  /// behind it is held too, so the order is kept. The next goes only once this
+  /// one has been read (the log shows it, or a turn runs): two never overlap.
+  Future<void> _dispatch(QueuedMessage next) async {
+    _dispatching = true;
+    _queue.remove(next.id);
+    _queueChanged();
+    try {
+      final prompt = terminalPrompt(next.blocks);
+      final before = _userMessages();
+      final sent = prompt != null && await _sendNow(next.blocks, prompt);
+      if (_disposed) return;
+      if (!sent) {
+        _putBack(next, prompt == null ? terminalAttachmentRefusal : (error ?? 'The agent did not take it.'));
+        return;
+      }
+      final taken = await _waitFor(() => _turnRuns || _userMessages() > before, confirmWithin);
+      if (!taken && !_disposed && _following) {
+        _putBack(next, 'It is not in the agent’s log yet. Check the terminal, then resume.');
+      }
+    } finally {
+      _dispatching = false;
+    }
+    if (!_disposed) _pump();
+  }
+
+  void _putBack(QueuedMessage message, String why) {
+    _queue.add(message.blocks, at: message.at, state: QueuedState.held, heldReason: why, first: true);
+    _queue.holdAll('Waiting behind a message that was not sent. Resume to send them in order.');
+    _queueChanged();
+  }
 
   @override
   AuthNeeded? get authNeeded => null;
@@ -978,8 +1125,17 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     if (_disposed || _holds == 0) return;
     if (--_holds > 0) return;
     _lingerTimer = Timer(linger, _stopFollowing);
-    _idleTimer = Timer(idleAfter, () => onIdle?.call(this));
+    _armIdle();
     _refresh();
+  }
+
+  /// Drops the session after [idleAfter] unused, unless messages wait in its
+  /// queue: they would be lost without a word.
+  void _armIdle() {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    if (_disposed || held || !_queue.isEmpty) return;
+    _idleTimer = Timer(idleAfter, () => onIdle?.call(this));
   }
 
   /// A screen holds the session.
@@ -1469,6 +1625,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       _lastPhase = phase;
       _phaseSince = DateTime.now();
     }
+    _driveQueue();
     _composed = null;
     final background = _background();
     final shown = (
@@ -1810,6 +1967,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       _setProblem(failure);
       return failure == null;
     }
+    final steered = _turnRuns;
     final before = _userMessages();
     final failure = await _sendPrompt(trimmed);
     // `/clear` and `/new` open another log and are never a message in it.
@@ -1819,7 +1977,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       unawaited(_followNewLog());
       return true;
     }
-    return _afterSend(before, failure);
+    return _afterSend(before, failure, blocks: [TextBlock(trimmed)], steered: steered);
   }
 
   /// Commands that start another conversation, and with it another log file.
@@ -1848,23 +2006,47 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// anything but text for a subagent.
   @override
   Future<bool> sendBlocks(List<ContentBlock> blocks, {bool queue = false}) async {
+    if (blocks.isEmpty) return false;
     final prompt = terminalPrompt(blocks);
     if (prompt == null || (_isSub && blocks.any((b) => b is! TextBlock))) {
       _setProblem(terminalAttachmentRefusal);
       return false;
     }
+    // Behind what already waits (the order the person sent them in), or after
+    // the turn when asked: on the phone, where it can be edited.
+    if (!_isSub && (_queue.hasWaiting || (queue && _turnRuns))) {
+      markSeen();
+      _setProblem(null);
+      _stopSendsQueue = false;
+      _queue.add(blocks, at: _clock());
+      _changed();
+      _pump();
+      return true;
+    }
+    return _sendNow(blocks, prompt);
+  }
+
+  /// Types [blocks] into the pane now, whatever the agent is doing.
+  Future<bool> _sendNow(List<ContentBlock> blocks, TerminalPrompt prompt) async {
     if (prompt.pastes.isEmpty) return send(prompt.line);
+    final steered = _turnRuns;
     final before = _userMessages();
-    return _afterSend(before, await _sendTerminal(prompt));
+    return _afterSend(before, await _sendTerminal(prompt), blocks: blocks, steered: steered);
   }
 
   /// What every send ends with: the problem (or none), the session seen, and
   /// the log checked for the message.
-  bool _afterSend(int before, String? failure) {
+  bool _afterSend(int before, String? failure, {List<ContentBlock> blocks = const [], bool steered = false}) {
     _setProblem(failure);
     if (failure != null) return false;
     markSeen();
-    unawaited(_confirmSent(before));
+    // Into a running turn it is read later (after the agent's current tool
+    // call): until the log shows it, it is a row of its own, so a message that
+    // left the field is never nowhere. Another one still on its way counts
+    // before this one in the log.
+    final ahead = _sent.length;
+    final row = steered ? _addSent(blocks) : null;
+    unawaited(_confirmSent(before + ahead, row));
     return true;
   }
 
@@ -1873,8 +2055,14 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   /// The agent writes the message to its log when it takes it: no entry in
   /// [confirmWithin] means the pane did not take it (the log is the truth, so
   /// nothing is echoed locally).
-  Future<void> _confirmSent(int before) async {
-    final seen = await _waitFor(() => _userMessages() > before, confirmWithin);
+  Future<void> _confirmSent(int before, QueuedMessage? row) async {
+    // Into a running turn the agent reads it when its current tool call ends,
+    // which can be minutes away: it is not lost while the turn goes on.
+    bool seen;
+    do {
+      seen = await _waitFor(() => _userMessages() > before, confirmWithin);
+    } while (!seen && _turnRuns && !_disposed);
+    if (row != null) _removeSent(row.id);
     if (!seen && !_disposed && _logLink == AgentLink.live) {
       _setProblem('The message isn’t in the agent’s log yet. Check the terminal.');
     }
@@ -1897,12 +2085,17 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   Future<String?> _deliver(Future<void> Function() go, {String? failure}) async {
     if (_disposed) return 'This session is closed.';
     if (!machine.isLive || _pane == null) return 'Not connected. The message wasn’t sent.';
+    if (_exited) return '$agentLabel is not running in this pane any more. The message wasn’t sent.';
     if (_blocked || _pending != null) {
       return _pending is PendingQuestion
           ? 'The agent is waiting for an answer. Answer it first; the message wasn’t sent.'
           : 'The agent needs you in the terminal. The message wasn’t sent.';
     }
     try {
+      // Into a working pane the keys land on whatever the screen shows now: a
+      // dialog that opened since herdr last said `working` would take the text
+      // and the Enter as its answer (`1. Yes` is the default of most).
+      if (_paneWorking && await _screenAsks()) return _screenAsking;
       await go();
       return null;
     } on HerdrApiException catch (e) {
@@ -1910,6 +2103,18 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     } on HerdrTransportException catch (e) {
       return failure ?? e.message;
     }
+  }
+
+  static const _screenAsking = 'The terminal is asking something. Answer it first; the message wasn’t sent.';
+
+  /// Whether the pane's screen shows a dialog that wants an answer: the agent's
+  /// own menus (omp's approval and plan review), a generic approval or numbered
+  /// menu, or the question tool.
+  Future<bool> _screenAsks() async {
+    final screen = (await machine.api.readPane(paneId, lines: 60)).text;
+    return _parsePrompt(screen, menu: true) != null ||
+        _parsePrompt(screen, menu: false) != null ||
+        (kind.ask?.looksLikeAsk(screen) ?? false);
   }
 
   /// `esc`, the same key as the terminal screen's chip. A second Stop within a
@@ -1921,6 +2126,7 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     final last = _lastCancelAt;
     if (last != null && now.difference(last) < const Duration(milliseconds: 1500)) return;
     _lastCancelAt = now;
+    if (_queue.hasWaiting && _turnRuns) _stopSendsQueue = true;
     unawaited(_keys(const ['esc']));
   }
 

@@ -4,6 +4,113 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.53] - 2026-11-05
+
+### Folder workspaces, plain terminal creation, and send-button-only composers
+
+This fork release brings shared folder workspaces and native Claude starts,
+plain terminal creation from mobile, send-button-only editing across all three
+composers, and honest retained-state presentation during reconnects.
+
+- **Shared folder and native Claude starts**: Starting Claude Code from the phone
+  reuses the deepest matching checkout or an exact-directory plain workspace
+  instead of the legacy phone bucket, and opens a real desk pane.
+- **Create plain terminal**: Open a clean terminal in any checkout or folder
+  workspace directly from the phone without starting an agent or injecting commands.
+- **Send-button-only message composers**: In the terminal pane, structured agent
+  chat, and modal reply sheet, pressing Enter inserts a newline for multiline
+  drafting; message dispatch is strictly gated behind the explicit in-app Send
+  button. Raw terminal Enter semantics for TUI navigation remain unchanged.
+- **Honest retained-state and offline drafting**: Machine tiles display retained
+  agent counts with an 'Updating' indicator during reconnects, and composers
+  permit in-memory offline draft editing while disconnected or reconnecting (not
+  a latency improvement claim).
+
+**Limitations & unverified scope**
+
+- Behavior on physical handset keyboards, touch digitizers, and real network
+  reconnects is unverified (measured under headless simulation only).
+- Legitimate remote filesystem symlink aliases fail closed until authoritative
+  canonicalisation is available.
+- Contextual workspace tab creation retains pre-existing omission of post-creation
+  cwd fallback validation and uncertain-creation warning improvements.
+- Fork-only build; installs beside stock herdr under the `.jaya` package suffix.
+
+## [0.1.52] - 2026-11-05
+
+### A stopped omp subagent no longer shows as done
+
+An omp subagent that failed, or that its parent stopped, shows as `failed` in
+the subagents chip and list. It used to show `done`.
+
+- The app now reads the result of every background-job report from omp, not
+  only `wait`, so a stop is seen. A subagent that had already failed stays
+  `failed`.
+
+**Fixed**
+
+- Three subagents that failed because their model server was down, and were
+  then stopped by the parent, all showed `done`. Checked on the recorded log
+  of that session; not measured on a phone.
+
+## [0.1.51] - 2026-11-05
+
+### See what you sent into a terminal agent
+
+A message you send into a terminal agent's running turn now shows above the
+box as `Sent to the terminal · not read yet`, until the agent reads it and the
+chat shows it. Before, it left the box and showed nothing, which for omp can
+be minutes behind a long tool call.
+
+> [!TIP]
+> Try it: while an agent in a terminal works, type a message and tap `Send`.
+> It shows above the box until the chat has it.
+
+- Several messages sent in a row show in the order you sent them, and each
+  goes when its own message reaches the chat.
+- That row cannot be edited or removed: the message is already in the
+  agent's own queue in the terminal. To keep a message you may want to
+  change, hold `Send`: it waits on the phone, where you can edit or remove it.
+- If the turn ends and the chat still has no sign of the message, the row
+  goes and a strip says it is not in the agent's log yet.
+- Not checked with a real agent: how long each of Claude Code, omp and Codex
+  takes to show a message sent mid-turn.
+
+![The chat of a working agent with a sent message and a queued one above the box](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.51/0.1.51-sent-to-terminal.png)
+
+## [0.1.50] - 2026-11-05
+
+### Message an agent in a terminal while it works
+
+Claude Code, Codex and omp running in a terminal now take a message while
+they work. `Send` puts it into the turn; hold `Send` to keep it on the phone
+until the turn ends.
+
+> [!TIP]
+> Try it: open an agent that runs in a terminal while it works, type a
+> message and tap `Send`. Hold `Send` instead to queue it above the box; tap
+> a queued message to edit it, or its cross to remove it.
+
+- A queued message goes out when the agent stops working, one at a time.
+  `Stop` sends what waits together, as one message. A stop in the terminal
+  cannot be told from a finished turn, so what waits goes out then too.
+- If the terminal is asking something (an approval, a plan, a question),
+  nothing is typed: the text stays in the box and a strip at the top says why.
+- If the agent has left the pane, or a message does not go through, what
+  waits is held with `Resume`, in the order you sent it.
+- A message sent into the turn shows in the chat when the agent reads it; for
+  omp that can be after its current tool call.
+- Not checked on a real phone with each agent: that Enter takes the message
+  into a running turn in omp, Claude Code and Codex, and when Codex shows it
+  in the chat.
+
+![A chat with two messages queued above the box and a draft being typed](https://github.com/tuan3w/herdr-mobile/releases/download/v0.1.50/0.1.50-terminal-queue.png)
+
+**Fixed**
+
+- Pressing Send on the keyboard while an agent in a terminal works no longer
+  shows a toast that it is working and sends nothing: it sends the message.
+
 ## [0.1.49] - 2026-11-04
 
 ### A waiting omp subagent no longer shows as done

@@ -591,8 +591,12 @@ void main() {
       expect(session.sent, isEmpty);
     });
 
-    testWidgets('keyboard actions send nothing and keep the text', (tester) async {
-      final session = FakeAgentSession(state: stateWith(turnActive: true))..observed = true;
+    testWidgets('keyboard actions send nothing and Send button sends into turn on mid-turn terminal agent', (
+      tester,
+    ) async {
+      final session = FakeAgentSession(state: stateWith(turnActive: true))
+        ..observed = true
+        ..steerable = true;
       await pumpScreen(tester, session);
       await tester.enterText(find.byType(TextField), 'fix the build');
       // Keyboard actions (send, done, newline) and hardware key events send nothing
@@ -611,7 +615,14 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
       await tester.pump();
       expect(session.sent, isEmpty, reason: 'keyboard actions must never dispatch');
+      expect(session.steeredBlocks, isEmpty, reason: 'keyboard actions must never dispatch');
       expect(composerField(tester).controller!.text, 'fix the build');
+
+      // Tapping app Send button dispatches into the turn
+      await tester.tap(find.byKey(const ValueKey('send')));
+      await tester.pump();
+      expect(session.steeredBlocks, hasLength(1));
+      expect(composerField(tester).controller!.text, isEmpty, reason: 'it went: the field is free');
     });
 
     testWidgets('multiline draft with active composing text dispatches once via app Send button', (tester) async {

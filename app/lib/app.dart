@@ -32,6 +32,7 @@ import 'data/services/notifier.dart';
 import 'data/services/snapshot_cache.dart';
 import 'data/services/task_mover.dart';
 import 'data/services/transport_factory.dart';
+import 'fork/account/account_session.dart';
 import 'ui/support/deep_link.dart';
 import 'ui/support/keyboard_frames.dart';
 
@@ -294,6 +295,10 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
       Provider<PanePreviews>.value(value: _previews),
       if (widget.observedSessions case final observed?) Provider<ObservedSessions>.value(value: observed),
       Provider<TransportFactory>.value(value: createSshTransport),
+      ChangeNotifierProvider(
+        lazy: false,
+        create: (_) => AccountSession(machines: widget.machines, connect: createSshTransport)..init(),
+      ),
       if (widget.agentSessions case final sessions?) ListenableProvider<AgentSessions>.value(value: sessions),
       ChangeNotifierProvider.value(value: _attentionSet),
       if (widget.agentSessionSettings case final settings?) ChangeNotifierProvider.value(value: settings),

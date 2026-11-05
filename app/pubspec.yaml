@@ -36,6 +36,7 @@ dependencies:
     sdk: flutter
 
   dartssh2: ^4.1.0
+  pointycastle: ^4.0.0 # fork: account vault crypto (lib/fork/account/); locked at 4.0.0 through dartssh2
   # sha1 of a session key names its folder in the host inbox (host_inbox.dart)
   crypto: ^3.0.7
   pinenacl: ^0.6.0

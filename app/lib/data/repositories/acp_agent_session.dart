@@ -1070,6 +1070,9 @@ class AcpAgentSession extends ChangeNotifier implements AgentSessionView {
     await _attach();
   }
 
+  @override
+  Future<void> reload() => reattach();
+
   /// The link broke while the session was meant to run: show it, find out
   /// whether the keeper still lives, and attach again.
   void _dropped(String why) {

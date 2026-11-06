@@ -311,6 +311,10 @@ abstract interface class AgentSessionView implements Listenable, AttachTarget {
   /// background. Completes when the attempt is over; never throws.
   Future<void> reattach();
 
+  /// Reloads the session from scratch (e.g. re-locates and re-reads the log
+  /// from the beginning).
+  Future<void> reload();
+
   /// A screen shows this session: it is attached to its keeper (replaying what
   /// it missed) until the matching [release], whatever else is going on on the
   /// board. Calls pair up (a count); a screen calls [acquire] when it appears

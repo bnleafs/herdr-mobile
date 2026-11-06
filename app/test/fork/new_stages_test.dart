@@ -190,5 +190,37 @@ void main() {
       expect(event.durationMs, 850);
       expect(event.outcome, StageOutcome.success);
     });
+
+    test('chatReload records stage and serializes cleanly', () {
+      final opId = telemetry.generateOpId();
+      telemetry.recordStage(opId: opId, stage: TelemetryStage.chatReload);
+
+      final reloadEvents = sink.milestones.where((m) => m.stage == TelemetryStage.chatReload).toList();
+      expect(reloadEvents.length, 1);
+      final event = reloadEvents.first;
+      expect(event.opId, opId);
+      final json = event.toJson();
+      expect(json['stage'], 'chatReload');
+      expect(json.containsKey('path'), isFalse);
+    });
+
+    test('transcriptLocate records locateRoute and sessionMismatch', () {
+      final opId = telemetry.generateOpId();
+      telemetry.recordStage(
+        opId: opId,
+        stage: TelemetryStage.transcriptLocate,
+        locateRoute: 'process',
+        sessionMismatch: true,
+      );
+
+      final locateEvents = sink.milestones.where((m) => m.stage == TelemetryStage.transcriptLocate).toList();
+      expect(locateEvents.length, 1);
+      final event = locateEvents.first;
+      expect(event.locateRoute, 'process');
+      expect(event.sessionMismatch, isTrue);
+      final json = event.toJson();
+      expect(json['locateRoute'], 'process');
+      expect(json['sessionMismatch'], isTrue);
+    });
   });
 }

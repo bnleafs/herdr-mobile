@@ -464,6 +464,7 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
   /// Taken over by another device (link ended, [evicted] true).
   bool _evicted = false;
   var reattachCount = 0;
+  var reloadCount = 0;
 
   /// Holds taken with [acquire] and not yet given back.
   var holds = 0;
@@ -525,6 +526,11 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
     _link = AgentLink.live;
     _error = null;
     notifyListeners();
+  }
+
+  @override
+  Future<void> reload() async {
+    reloadCount++;
   }
 
   /// Set to make this fake an observed session (pane `terminalPaneId`).

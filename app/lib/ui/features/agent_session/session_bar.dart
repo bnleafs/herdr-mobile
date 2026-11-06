@@ -10,11 +10,14 @@ import '../../../data/decision/session_chips.dart';
 import '../../../data/models/herdr_models.dart' show AgentStatus;
 import '../../../data/models/worktrees.dart' show WorktreeInfo;
 import '../../../data/repositories/agent_session.dart';
+import '../../../data/repositories/observed_session.dart';
 import '../../../data/repositories/agent_screens.dart' show AgentRef, AgentView, PaneAgent;
 import '../../../data/words/agent_names.dart';
 import '../../../data/words/plural.dart';
 import '../../../data/words/place_name.dart';
 import '../../../data/words/where_line.dart';
+import '../../../fork/telemetry/envelope.dart';
+import '../../../fork/telemetry/telemetry.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -338,6 +341,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
     Navigator.of(context).pop();
   }
 
+
   /// Deletes the worktree this session runs in (held, never forced); the
   /// chat stays readable, the session loses its folder.
   void _removeWorktree() {
@@ -356,6 +360,19 @@ class _OptionsSheetState extends State<_OptionsSheet> {
         toaster: toaster,
       ),
     );
+  }
+
+  /// Re-finds and re-reads the session log from scratch.
+  void _reloadChat() {
+    Navigator.of(context).pop();
+    final session = widget.session;
+    try {
+      final opId = session is ObservedAgentSession ? session.opId : ForkTelemetry.instance.generateOpId();
+      ForkTelemetry.instance.recordStage(opId: opId, stage: TelemetryStage.chatReload);
+    } catch (_) {
+      // Telemetry never throws into the app.
+    }
+    unawaited(session.reload());
   }
 
   @override
@@ -418,6 +435,10 @@ class _OptionsSheetState extends State<_OptionsSheet> {
         SheetActionRow(
           action: SheetAction(label: 'Copy session link', icon: LucideIcons.link, onTap: _copyLink),
           onTap: _copyLink,
+        ),
+        SheetActionRow(
+          action: SheetAction(label: 'Reload chat', icon: LucideIcons.rotateCw, onTap: _reloadChat),
+          onTap: _reloadChat,
         ),
         if (!widget.session.isObserved)
           ListenableBuilder(
@@ -483,6 +504,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     Navigator.of(context).pop(true);
   }
 
+
   @override
   Widget build(BuildContext context) => SessionSelect<(List<ConfigOption>, ModeState?)>(
     session: widget.session,
@@ -522,6 +544,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       _SettingRow(title: s.name, value: s.currentName, onTap: () => setState(() => _picking = s.id)),
                 ],
               ),
+
       );
     },
   );

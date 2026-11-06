@@ -38,4 +38,32 @@ void main() {
     final room = tester.getSize(find.byType(SessionBar)).width;
     expect(tester.getSize(title).width, greaterThan(room * 0.4), reason: 'the title gets the room, not a label');
   });
+
+  testWidgets('the session sheet offers Reload chat and invokes reload on the session', (tester) async {
+    final session = FakeAgentSession(title: 'Chat session');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(onPressed: () => showSessionOptions(context, session), child: const Text('Open')),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    final reloadAction = find.text('Reload chat');
+    expect(reloadAction, findsOneWidget);
+
+    await tester.tap(reloadAction);
+    await tester.pumpAndSettle();
+
+    expect(session.reloadCount, 1);
+    expect(find.text('Reload chat'), findsNothing);
+  });
 }

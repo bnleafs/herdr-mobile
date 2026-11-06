@@ -128,7 +128,10 @@ class SentryTelemetrySink implements TelemetrySink {
       // 1. Structured Sentry Log
       final level = switch (envelope.stage) {
         TelemetryStage.error => SentryLogLevel.error,
-        TelemetryStage.fallback || TelemetryStage.userRetry || TelemetryStage.uiStall => SentryLogLevel.warn,
+        TelemetryStage.fallback ||
+        TelemetryStage.userRetry ||
+        TelemetryStage.chatReload ||
+        TelemetryStage.uiStall => SentryLogLevel.warn,
         _ when envelope.category != TelemetryCategory.none => SentryLogLevel.warn,
         _ => SentryLogLevel.info,
       };
@@ -157,6 +160,8 @@ class SentryTelemetrySink implements TelemetrySink {
           'sessionLengthBucket': SentryAttribute.string(envelope.sessionLengthBucket!),
         if (envelope.foregroundCount != null) 'foregroundCount': SentryAttribute.int(envelope.foregroundCount!),
         if (envelope.backgroundCount != null) 'backgroundCount': SentryAttribute.int(envelope.backgroundCount!),
+        if (envelope.locateRoute != null) 'locateRoute': SentryAttribute.string(envelope.locateRoute!),
+        if (envelope.sessionMismatch != null) 'sessionMismatch': SentryAttribute.bool(envelope.sessionMismatch!),
       };
 
       switch (level) {
@@ -190,6 +195,7 @@ class SentryTelemetrySink implements TelemetrySink {
       final isAnomaly =
           envelope.stage == TelemetryStage.fallback ||
           envelope.stage == TelemetryStage.userRetry ||
+          envelope.stage == TelemetryStage.chatReload ||
           envelope.stage == TelemetryStage.uiStall ||
           envelope.stage == TelemetryStage.error ||
           envelope.outcome == StageOutcome.failure ||
@@ -535,6 +541,8 @@ class ForkTelemetry {
     String? sessionLengthBucket,
     int? foregroundCount,
     int? backgroundCount,
+    String? locateRoute,
+    bool? sessionMismatch,
   }) {
     if (!_enabled) return;
     final envelope = TelemetryEnvelope(
@@ -561,6 +569,8 @@ class ForkTelemetry {
       foregroundCount: foregroundCount,
       backgroundCount: backgroundCount,
       installId: _installId,
+      locateRoute: locateRoute,
+      sessionMismatch: sessionMismatch,
     );
 
     if (_queue.enqueue(envelope)) {

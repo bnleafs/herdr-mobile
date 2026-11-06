@@ -205,6 +205,9 @@ class AgentScreens extends ChangeNotifier {
     _resume = _saved;
   }
 
+  /// Whether a screen was saved to resume on launch.
+  bool get hasResume => _resume != null;
+
   /// The screen that was in front when the app was last left, once.
   FrontAgent? takeResume() {
     final resume = _resume;

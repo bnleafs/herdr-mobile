@@ -9,6 +9,7 @@ import '../../../data/acp/agent_host.dart' show AgentHostException;
 import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/auth_needed.dart' show AuthNeeded;
 import '../../../data/acp/prompt_content.dart' show composePrompt;
+import '../../../data/acp/prompt_queue.dart' show SendDelivery;
 import '../../../data/services/image_prep.dart' show PreparedImage, prepareImage;
 import '../../../data/acp/session_state.dart';
 import '../../../data/repositories/agent_screens.dart';
@@ -28,6 +29,8 @@ import '../../../fork/telemetry/telemetry.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
+import '../../../data/repositories/fleet_repository.dart';
+import '../../../data/repositories/terminal_settings.dart';
 import '../attach/attach_kit.dart';
 import 'attach_model.dart';
 import 'attach_picker.dart';
@@ -479,6 +482,17 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     if (!_attachments.canSend) return;
     final text = _input.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
+    final isBtw = _isBtw(session, text);
+    final busy =
+        session.isObserved &&
+        session.relayNote == null &&
+        session.phase != AgentPhase.idle &&
+        !session.waitingOnBackground &&
+        !session.canSteer &&
+        session.delivery != SendDelivery.now;
+    if (busy && !isBtw) {
+      return refuse('The agent is working. Send it once it is idle');
+    }
     // A `/word` the agent does not list waits for the person's word (see
     // [UnknownCommandGuard]); nothing is cleared or sent.
     if (_unknown.holds(text)) return;
@@ -506,9 +520,15 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
         toaster,
         screens,
         after: after,
+        isBtw: isBtw,
       ),
     );
   }
+
+  bool _isBtw(AgentSessionView session, String text) =>
+      session.isObserved &&
+      session.agent == 'claude' &&
+      RegExp(r'^/btw\s+\S', caseSensitive: false).hasMatch(text.trim());
 
   bool _freshening = false;
 
@@ -554,12 +574,16 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     Toaster? toaster,
     AgentScreens? screens, {
     bool after = false,
+    bool isBtw = false,
   }) async {
-    final sent = await session.sendBlocks(blocks, queue: after);
+    final sent = isBtw ? await session.send(text) : await session.sendBlocks(blocks, queue: after);
     if (sent) {
       Haptics.sent();
       _commands.recordSent(text);
       if (learned != null) unawaited(learned.learn(text));
+      if (isBtw && mounted) {
+        _switchToTerminal(context, session, toaster);
+      }
       return;
     }
     if (mounted) {
@@ -569,6 +593,47 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       return;
     }
     _giveBackAfterLeaving(text, chips, toaster, screens);
+  }
+
+  void _switchToTerminal(BuildContext context, AgentSessionView session, Toaster? toaster) {
+    final own = widget.agent;
+    final paneId = own is PaneAgent ? own.paneId : session.terminalPaneId;
+    final machineId = own is PaneAgent ? own.machineId : session.machine.profile.id;
+    final pane = paneId != null ? PaneAgent(machineId, paneId) : null;
+    if (pane != null && _canSwitchToTerminal(context)) {
+      try {
+        if (own is PaneAgent) {
+          unawaited(showAgentView(context, own, AgentView.terminal));
+        } else {
+          unawaited(openAgent(context, pane, view: AgentView.terminal));
+        }
+        return;
+      } catch (_) {
+        // Fall through to toast
+      }
+    }
+    final action = pane != null
+        ? ToastAction('Show terminal', () {
+            if (context.mounted && _canSwitchToTerminal(context)) {
+              unawaited(openAgent(context, pane, view: AgentView.terminal));
+            }
+          })
+        : null;
+    if (mounted) {
+      showToast(context, 'Side question sent to terminal', action: action);
+    } else {
+      toaster?.show('Side question sent to terminal', action: action);
+    }
+  }
+
+  bool _canSwitchToTerminal(BuildContext context) {
+    try {
+      if (context.read<FleetRepository?>() == null) return false;
+      if (context.read<TerminalSettings?>() == null) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// The send failed after the person left this screen (Back, or a swipe to

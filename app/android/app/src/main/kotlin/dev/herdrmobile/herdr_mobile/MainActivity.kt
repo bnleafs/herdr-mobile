@@ -1,14 +1,16 @@
 package dev.herdrmobile.herdr_mobile
 
-import android.content.ActivityNotFoundException
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.view.ViewTreeObserver
-import androidx.core.content.FileProvider
 import com.dexterous.flutterlocalnotifications.ForegroundService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -79,16 +81,21 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Opens Android's package installer on a downloaded release APK. Without
-     * the "Install unknown apps" permission for this app (Android 8+) the page
-     * that grants it opens instead, and Dart says so; the person taps Install
-     * again afterwards. The file is shared through [UpdateFileProvider], which
-     * serves the `updates/` cache folder and nothing else.
+     * Hands a downloaded release APK to Android's PackageInstaller session API.
+     * On Android 12+ (API 31+), with UPDATE_PACKAGES_WITHOUT_USER_ACTION declared,
+     * updates can be installed without user action when updating itself. If user
+     * action is required (or on policy refusal / older Android), the session
+     * broadcasts STATUS_PENDING_USER_ACTION to [UpdateInstallReceiver], which
+     * launches the system confirmation intent immediately.
      */
     private fun installApk(path: String?, result: MethodChannel.Result) {
         // Only a verified, renamed release APK: never a `.part` or another file.
         if (path == null || !File(path).name.matches(Regex("herdr-mobile-\\d+\\.\\d+\\.\\d+\\.apk"))) {
             return result.error("install", "There is no update file to install. Download it again.", null)
+        }
+        val file = File(path)
+        if (!file.exists()) {
+            return result.error("install", "The update file is not where herdr keeps updates. Download it again.", null)
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
@@ -97,17 +104,44 @@ class MainActivity : FlutterActivity() {
                 )
                 return result.success("needsPermission")
             }
-            val uri = FileProvider.getUriForFile(this, "$packageName.updates", File(path))
-            startActivity(
-                Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, "application/vnd.android.package-archive")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-            )
-            result.success("started")
-        } catch (e: IllegalArgumentException) {
-            result.error("install", "The update file is not where herdr keeps updates. Download it again.", null)
-        } catch (e: ActivityNotFoundException) {
-            result.error("install", "This phone has no installer that can open the update.", null)
+            Thread {
+                var session: PackageInstaller.Session? = null
+                try {
+                    val installer = packageManager.packageInstaller
+                    val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                    params.setAppPackageName(packageName)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                    }
+                    val sessionId = installer.createSession(params)
+                    session = installer.openSession(sessionId)
+                    session.openWrite("package", 0, file.length()).use { out ->
+                        file.inputStream().use { input ->
+                            input.copyTo(out)
+                        }
+                        session.fsync(out)
+                    }
+                    val intent = Intent(this, UpdateInstallReceiver::class.java)
+                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    } else {
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                    }
+                    val pendingIntent = PendingIntent.getBroadcast(this, sessionId, intent, flags)
+                    session.commit(pendingIntent.intentSender)
+                    session.close()
+                    runOnUiThread { result.success("started") }
+                } catch (e: Exception) {
+                    try {
+                        session?.abandon()
+                    } catch (_: Exception) {}
+                    runOnUiThread {
+                        result.error("install", e.message ?: "Android couldn’t open the installer.", null)
+                    }
+                }
+            }.start()
+        } catch (e: Exception) {
+            result.error("install", e.message ?: "Android couldn’t open the installer.", null)
         }
     }
 
@@ -131,6 +165,54 @@ class MainActivity : FlutterActivity() {
         val flags = decor.systemUiVisibility
         if (flags and View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION == 0) {
             decor.systemUiVisibility = flags or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+    }
+}
+
+/**
+ * Handles callbacks from [PackageInstaller.Session.commit].
+ * When Android asks for confirmation (user action required), launches the system confirmation dialog.
+ * When the install succeeds, the app process is replaced by the new version.
+ * If the install fails, records the status code and error message in SharedPreferences for Dart.
+ */
+class UpdateInstallReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                try {
+                    context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("flutter.update.pendingUserAction.v1", true)
+                        .apply()
+                } catch (_: Exception) {}
+                val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT)
+                }
+                confirmIntent?.let {
+                    it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        context.startActivity(it)
+                    } catch (_: Exception) {}
+                }
+            }
+            PackageInstaller.STATUS_SUCCESS -> {
+                // Success: the process is replaced by the installed version.
+            }
+            else -> {
+                val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Status $status"
+                try {
+                    context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                        .edit()
+                        .putInt("flutter.update.installStatus.v1", status)
+                        .putString("flutter.update.installError.v1", message)
+                        .remove("flutter.update.pendingUserAction.v1")
+                        .apply()
+                } catch (_: Exception) {}
+            }
         }
     }
 }

@@ -22,6 +22,7 @@ abstract final class SettingsSyncKeys {
   static const notificationAlsoDone = 'notificationAlsoDone';
   static const autoCheckUpdates = 'autoCheckUpdates';
   static const autoDownloadUpdates = 'autoDownloadUpdates';
+  static const autoInstallUpdates = 'autoInstallUpdates';
   static const updatedAt = 'updatedAt';
 
   static const allowlist = {
@@ -36,6 +37,7 @@ abstract final class SettingsSyncKeys {
     notificationAlsoDone,
     autoCheckUpdates,
     autoDownloadUpdates,
+    autoInstallUpdates,
     updatedAt,
   };
 }
@@ -175,6 +177,7 @@ class SettingsSync extends ChangeNotifier {
     if (appUpdate != null) {
       map[SettingsSyncKeys.autoCheckUpdates] = appUpdate!.autoCheck;
       map[SettingsSyncKeys.autoDownloadUpdates] = appUpdate!.autoDownload;
+      map[SettingsSyncKeys.autoInstallUpdates] = appUpdate!.autoInstall;
     }
     map[SettingsSyncKeys.updatedAt] = (_localUpdatedAt ?? _clock()).toIso8601String();
     return map;
@@ -244,6 +247,9 @@ class SettingsSync extends ChangeNotifier {
       }
       if (remoteSettings[SettingsSyncKeys.autoDownloadUpdates] case final bool autoDownload) {
         await appUpdate?.setAutoDownload(autoDownload);
+      }
+      if (remoteSettings[SettingsSyncKeys.autoInstallUpdates] case final bool autoInstall) {
+        await appUpdate?.setAutoInstall(autoInstall);
       }
 
       _hasLocalHistory = true;

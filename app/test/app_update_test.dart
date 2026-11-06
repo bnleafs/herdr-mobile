@@ -1,14 +1,42 @@
+import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/widgets.dart' show AppLifecycleState;
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/app_info.dart';
 import 'package:herdr_mobile/data/models/release_info.dart';
 import 'package:herdr_mobile/data/repositories/app_update.dart';
 import 'package:herdr_mobile/data/services/apk_installer.dart';
+import 'package:herdr_mobile/fork/telemetry/envelope.dart';
+import 'package:herdr_mobile/fork/telemetry/telemetry.dart';
+import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/update_fakes.dart';
+
+class _CapturingSink implements TelemetrySink {
+  final List<TelemetryEnvelope> milestones = [];
+  final List<TelemetryEnvelope> errors = [];
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<void> sendMilestone(TelemetryEnvelope envelope) async {
+    milestones.add(envelope);
+  }
+
+  @override
+  Future<void> sendError(TelemetryEnvelope envelope) async {
+    errors.add(envelope);
+  }
+
+  @override
+  Future<void> reset() async {}
+
+  @override
+  Future<void> close() async {}
+}
 
 const _base = 'https://github.com/$appRepository/releases/download/v0.1.7';
 
@@ -228,12 +256,12 @@ void main() {
       await update.checkIfDue();
       expect(feed.asked, 1);
 
-      now = now.add(const Duration(hours: 11));
+      now = now.add(const Duration(minutes: 10));
       update.onLifecycleState(AppLifecycleState.resumed);
       await Future<void>.delayed(Duration.zero);
       expect(feed.asked, 1, reason: 'not due yet');
 
-      now = now.add(const Duration(hours: 2));
+      now = now.add(const Duration(minutes: 55));
       await update.checkIfDue();
       expect(feed.asked, 2);
     });
@@ -613,6 +641,259 @@ void main() {
     test('explicit fork source: default is bnleafs/herdr-mobile', () {
       expect(appRepository, 'bnleafs/herdr-mobile');
       expect(appRepositoryUrl, 'https://github.com/bnleafs/herdr-mobile');
+    });
+
+    test('auto-install fires on background when ready and autoInstall is on', () async {
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await Future<void>.delayed(Duration.zero);
+      expect(autoUpdate.stage, UpdateStage.ready);
+      expect(installer.installed, isEmpty, reason: 'does not install in foreground');
+
+      autoUpdate.onLifecycleState(AppLifecycleState.paused);
+      await Future<void>.delayed(Duration.zero);
+      expect(installer.installed, ['/cache/updates/herdr-mobile-0.1.7.apk']);
+    });
+
+    test('auto-install does not fire when autoInstall is off', () async {
+      await autoUpdate.setAutoInstall(false);
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await Future<void>.delayed(Duration.zero);
+      expect(autoUpdate.stage, UpdateStage.ready);
+
+      autoUpdate.onLifecycleState(AppLifecycleState.paused);
+      await Future<void>.delayed(Duration.zero);
+      expect(installer.installed, isEmpty);
+    });
+
+    test('auto-install does not fire twice for the same version', () async {
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await Future<void>.delayed(Duration.zero);
+
+      autoUpdate.onLifecycleState(AppLifecycleState.paused);
+      await Future<void>.delayed(Duration.zero);
+      expect(installer.installed.length, 1);
+
+      autoUpdate.onLifecycleState(AppLifecycleState.resumed);
+      autoUpdate.onLifecycleState(AppLifecycleState.paused);
+      await Future<void>.delayed(Duration.zero);
+      expect(installer.installed.length, 1, reason: 'at most one attempt per version');
+    });
+
+    test('auto-install does not fire when nothing is downloaded', () async {
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      expect(autoUpdate.stage, UpdateStage.downloading);
+
+      autoUpdate.onLifecycleState(AppLifecycleState.paused);
+      await Future<void>.delayed(Duration.zero);
+      expect(installer.installed, isEmpty);
+    });
+
+    test(
+      'cold start with ready APK installs right away if no session screen is open, but waits if one is open',
+      () async {
+        final release = _release('0.1.7');
+        files.onPhone = File('/cache/updates/herdr-mobile-0.1.7.apk');
+        store.record = UpdateRecord(release: release);
+
+        // Session open: does not install right away
+        final sessionOpenUpdate = AppUpdate(
+          store: store,
+          feed: feed,
+          files: files,
+          installer: installer,
+          current: AppVersion.tryParse('0.1.0'),
+        );
+        addTearDown(sessionOpenUpdate.dispose);
+        await sessionOpenUpdate.load();
+        expect(sessionOpenUpdate.stage, UpdateStage.ready);
+        await sessionOpenUpdate.maybeColdStartInstall(hasOpenSession: true);
+        expect(installer.installed, isEmpty, reason: 'waits when session is open');
+
+        sessionOpenUpdate.onLifecycleState(AppLifecycleState.paused);
+        await Future<void>.delayed(Duration.zero);
+        expect(installer.installed, ['/cache/updates/herdr-mobile-0.1.7.apk'], reason: 'installs on next background');
+
+        // No session open: installs right away on cold start
+        final freshInstaller = FakeApkInstaller();
+        final noSessionUpdate = AppUpdate(
+          store: store,
+          feed: feed,
+          files: files,
+          installer: freshInstaller,
+          current: AppVersion.tryParse('0.1.0'),
+        );
+        addTearDown(noSessionUpdate.dispose);
+        await noSessionUpdate.load();
+        await noSessionUpdate.maybeColdStartInstall(hasOpenSession: false);
+        expect(freshInstaller.installed, ['/cache/updates/herdr-mobile-0.1.7.apk'], reason: 'installs on cold start');
+      },
+    );
+
+    test('resume triggers a check only after 15 min', () async {
+      feed.answer = null;
+      await autoUpdate.check();
+      expect(feed.asked, 1);
+
+      now = now.add(const Duration(minutes: 14));
+      autoUpdate.onLifecycleState(AppLifecycleState.resumed);
+      await Future<void>.delayed(Duration.zero);
+      expect(feed.asked, 1, reason: '14 min is within 15 min freshness');
+
+      now = now.add(const Duration(minutes: 2));
+      autoUpdate.onLifecycleState(AppLifecycleState.resumed);
+      await Future<void>.delayed(Duration.zero);
+      expect(feed.asked, 2, reason: '16 min triggers a resume check');
+    });
+
+    test('the toast shows once after a version change', () async {
+      store.record = const UpdateRecord(lastRunVersion: '0.1.58');
+      final updateWithBump = AppUpdate(
+        store: store,
+        feed: feed,
+        files: files,
+        installer: installer,
+        current: AppVersion.tryParse('0.1.59'),
+      );
+      addTearDown(updateWithBump.dispose);
+      await updateWithBump.load();
+
+      expect(updateWithBump.updatedToVersion, '0.1.59');
+      expect(updateWithBump.takeUpdatedToVersion(), '0.1.59');
+      expect(updateWithBump.takeUpdatedToVersion(), isNull, reason: 'cleared on take');
+
+      // Restart without version change: no toast
+      final sameVersionUpdate = AppUpdate(
+        store: store,
+        feed: feed,
+        files: files,
+        installer: installer,
+        current: AppVersion.tryParse('0.1.59'),
+      );
+      addTearDown(sameVersionUpdate.dispose);
+      await sameVersionUpdate.load();
+      expect(sameVersionUpdate.takeUpdatedToVersion(), isNull, reason: 'no toast when version unchanged');
+    });
+
+    test('takePendingUserAction returns true and clears flag when update is ready', () async {
+      SharedPreferences.setMockInitialValues({'update.pendingUserAction.v1': true});
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await Future<void>.delayed(Duration.zero);
+      expect(autoUpdate.stage, UpdateStage.ready);
+
+      final needed = await autoUpdate.takePendingUserAction();
+      expect(needed, isTrue);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('update.pendingUserAction.v1'), isNull, reason: 'flag cleared');
+
+      // Second check returns false
+      expect(await autoUpdate.takePendingUserAction(), isFalse);
+    });
+
+    test('takePendingUserAction returns false when no update is ready', () async {
+      SharedPreferences.setMockInitialValues({'update.pendingUserAction.v1': true});
+      expect(autoUpdate.stage, UpdateStage.idle);
+
+      final needed = await autoUpdate.takePendingUserAction();
+      expect(needed, isFalse, reason: 'not ready yet');
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('update.pendingUserAction.v1'), isTrue, reason: 'not cleared when not ready');
+    });
+
+    test('checkNativeInstallStatus reads, clears status and records telemetry on start', () async {
+      final sink = _CapturingSink();
+      final telemetry = ForkTelemetry.withSinks(sinks: [sink], enabled: true);
+      ForkTelemetry.setTestInstance(telemetry);
+      addTearDown(ForkTelemetry.resetInstance);
+
+      SharedPreferences.setMockInitialValues({
+        'update.installStatus.v1': 3,
+        'update.installError.v1': 'INSTALL_FAILED_INVALID_APK',
+      });
+
+      final update = AppUpdate(
+        store: store,
+        feed: feed,
+        files: files,
+        installer: installer,
+        current: AppVersion.tryParse('0.1.59'),
+      );
+      addTearDown(update.dispose);
+      await update.load();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('update.installStatus.v1'), isNull, reason: 'cleared status');
+      expect(prefs.getString('update.installError.v1'), isNull, reason: 'cleared error');
+
+      final installEvents = sink.milestones.where((m) => m.stage == TelemetryStage.appUpdateInstall).toList();
+      expect(installEvents.length, 1);
+      final event = installEvents.first;
+      expect(event.stage, TelemetryStage.appUpdateInstall);
+      expect(event.outcome, StageOutcome.failure);
+      expect(event.errorString, 'status_3');
+      final json = event.toJson();
+      expect(
+        json.values.toString().contains('INSTALL_FAILED_INVALID_APK'),
+        isFalse,
+        reason: 'error message text is not leaked in telemetry',
+      );
+    });
+
+    testWidgets('foreground prompt displays toast with Install action and triggers installer', (tester) async {
+      SharedPreferences.setMockInitialValues({'update.pendingUserAction.v1': true});
+      feed.answer = _release('0.1.7');
+      await autoUpdate.check();
+      files.running!.complete(File('/cache/updates/herdr-mobile-0.1.7.apk'));
+      await tester.pump();
+      expect(autoUpdate.stage, UpdateStage.ready);
+
+      final needed = await autoUpdate.takePendingUserAction();
+      expect(needed, isTrue);
+
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          navigatorObservers: [ToastRouteObserver()],
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                ctx = context;
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      );
+
+      final overlay = Overlay.of(ctx);
+      Toaster(overlay).show(
+        'Update v${autoUpdate.release!.version} is ready',
+        action: ToastAction('Install', () => unawaited(autoUpdate.install())),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Update v0.1.7 is ready'), findsOneWidget);
+      expect(find.text('Install'), findsOneWidget);
+
+      await tester.tap(find.text('Install'));
+      await tester.pump();
+      await tester.pump();
+      expect(installer.installed, ['/cache/updates/herdr-mobile-0.1.7.apk']);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
     });
   });
 }

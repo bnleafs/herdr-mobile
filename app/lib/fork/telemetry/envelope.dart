@@ -24,6 +24,7 @@ enum TelemetryStage {
   terminalCreation,
   appUpdateCheck,
   appUpdateDownload,
+  appUpdateInstall,
   uiStall,
   appSession,
   backgroundList,
@@ -34,7 +35,7 @@ enum TelemetryStage {
 enum ConnectPath { coldStart, rebuiltResume, refreshedResume }
 
 /// Bounded stage outcome category.
-enum StageOutcome { success, failure, cancelled, upToDate, foundUpdate }
+enum StageOutcome { success, failure, cancelled, upToDate, foundUpdate, silent, confirmed, pendingUserAction }
 
 /// Bounded enum of constant error categories. Raw error strings are never transmitted.
 enum TelemetryCategory { none, network, transport, hostApi, timeout, fs, unknown }

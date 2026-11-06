@@ -8,6 +8,7 @@ import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/fork/telemetry/envelope.dart';
 import 'package:herdr_mobile/fork/telemetry/telemetry.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/fake_network.dart';
 import '../support/fake_transport.dart';
@@ -189,6 +190,58 @@ void main() {
       final event = dlEvents.first;
       expect(event.durationMs, 850);
       expect(event.outcome, StageOutcome.success);
+    });
+
+    test('update install records appUpdateInstall stage with duration, outcome, and error status', () {
+      telemetry.recordStage(
+        opId: telemetry.generateOpId(),
+        stage: TelemetryStage.appUpdateInstall,
+        durationMs: 120,
+        outcome: StageOutcome.silent,
+      );
+
+      final installEvents = sink.milestones.where((m) => m.stage == TelemetryStage.appUpdateInstall).toList();
+      expect(installEvents.length, 1);
+      final event = installEvents.first;
+      expect(event.durationMs, 120);
+      expect(event.outcome, StageOutcome.silent);
+      final json = event.toJson();
+      expect(json['stage'], 'appUpdateInstall');
+      expect(json['outcome'], 'silent');
+    });
+
+    test('native install status failure recorded as appUpdateInstall failure with status code only', () async {
+      SharedPreferences.setMockInitialValues({
+        'update.installStatus.v1': 3,
+        'update.installError.v1': 'INSTALL_FAILED_VERIFICATION_FAILURE',
+      });
+
+      final feed = FakeReleaseFeed();
+      final files = FakeReleaseFiles();
+      final installer = FakeApkInstaller();
+      final store = MemoryUpdateStore(const UpdateRecord(autoDownload: false));
+      final update = AppUpdate(
+        store: store,
+        feed: feed,
+        files: files,
+        installer: installer,
+        current: AppVersion.tryParse('0.1.6'),
+      );
+
+      await update.checkNativeInstallStatus();
+
+      final installEvents = sink.milestones.where((m) => m.stage == TelemetryStage.appUpdateInstall).toList();
+      expect(installEvents.length, 1);
+      final event = installEvents.first;
+      expect(event.stage, TelemetryStage.appUpdateInstall);
+      expect(event.outcome, StageOutcome.failure);
+      expect(event.errorString, 'status_3');
+      final json = event.toJson();
+      expect(json.values.toString().contains('INSTALL_FAILED_VERIFICATION_FAILURE'), isFalse);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('update.installStatus.v1'), isNull);
+      expect(prefs.getString('update.installError.v1'), isNull);
     });
 
     test('chatReload records stage and serializes cleanly', () {

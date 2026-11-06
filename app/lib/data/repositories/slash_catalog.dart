@@ -246,7 +246,8 @@ class SlashCatalog {
   static String _clip(String v) => v.length <= 140 ? v : '${v.substring(0, 139)}…';
 }
 
-SlashCommand _b(String name, String description) => SlashCommand(name, description, SlashSource.builtIn);
+SlashCommand _b(String name, String description, {String? hint}) =>
+    SlashCommand(name, description, SlashSource.builtIn, hint: hint);
 
 /// By herdr's agent label.
 final Map<String, List<SlashCommand>> builtInSlashCommands = {
@@ -273,6 +274,7 @@ final Map<String, List<SlashCommand>> builtInSlashCommands = {
     _b('doctor', 'Check the installation'),
     _b('help', 'Show help and commands'),
     _b('exit', 'Quit'),
+    _b('btw', 'Ask a quick side question without interrupting current work', hint: 'question'),
   ],
   'codex': [
     _b('new', 'Start a new chat'),

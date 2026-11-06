@@ -243,6 +243,12 @@ class FakeAgentSession extends ChangeNotifier implements AgentSessionView {
       notifyListeners();
       return false;
     }
+    final text = blocks.whereType<TextBlock>().map((b) => b.text).join('\n').trim();
+    if (isObserved && agent == 'claude' && RegExp(r'^/btw\s+\S', caseSensitive: false).hasMatch(text)) {
+      sent.add(text);
+      notifyListeners();
+      return true;
+    }
     switch (delivery) {
       case SendDelivery.now:
         _go(blocks);

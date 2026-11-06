@@ -29,6 +29,8 @@ import '../../../fork/telemetry/telemetry.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
+import '../../../fork/aside/aside_sheet.dart' show showAsideSheet;
+
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/terminal_settings.dart';
 import '../attach/attach_kit.dart';
@@ -510,6 +512,11 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       return;
     }
     _input.clear();
+    if (isBtw) {
+      final question = text.replaceFirst(RegExp(r'^/btw\s*', caseSensitive: false), '').trim();
+      unawaited(showAsideSheet(context, session: session, initialQuestion: question));
+      return;
+    }
     unawaited(
       _send(
         session,

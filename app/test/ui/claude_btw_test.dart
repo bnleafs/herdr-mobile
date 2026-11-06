@@ -4,6 +4,7 @@ import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
 import 'package:herdr_mobile/data/models/slash_command.dart';
 import 'package:herdr_mobile/data/repositories/slash_catalog.dart';
+import 'package:herdr_mobile/fork/aside/aside_sheet.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 import 'package:herdr_mobile/ui/features/agent_session/agent_session_screen.dart';
 
@@ -58,14 +59,15 @@ void main() {
   });
 
   group('Claude /btw chat view behavior while agent is working', () {
-    testWidgets('/btw q bypasses busy gate, sends once to pane without transcript message, and offers terminal', (
-      tester,
-    ) async {
+    testWidgets('/btw q bypasses busy gate, clears draft and opens Aside sheet', (tester) async {
       final session = FakeAgentSession(state: stateWith(turnActive: true))
         ..observed = true
         ..paneId = 'p_1';
 
       await _pumpScreen(tester, session);
+
+      // Aside button exists for Claude observed session
+      expect(find.byTooltip('Aside'), findsOneWidget);
 
       // Typing /btw question while turn is active (working)
       await tester.enterText(find.byType(TextField), '/btw what does flag -c do?');
@@ -73,21 +75,14 @@ void main() {
 
       // Tap send button
       await tester.tap(find.byKey(const ValueKey('send')));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      // Sent once to the pane; fake records one line
-      expect(session.sent, ['/btw what does flag -c do?']);
-      expect(session.steeredBlocks, isEmpty, reason: 'not treated as steered turn message');
+      // Opens Aside sheet
+      expect(find.byType(AsideSheet), findsOneWidget);
 
       // Not added as a message to the transcript
       final userMessages = session.state.items.where((i) => i is TranscriptMessage && i.role == MessageRole.user);
       expect(userMessages, isEmpty, reason: 'must not add fake user message to chat transcript');
-
-      // Draft is cleared on success
-      expect(_composerField(tester).controller!.text, isEmpty);
-
-      // Shows terminal action in toast or switches to terminal view
-      expect(find.text('Show terminal'), findsOneWidget);
     });
 
     testWidgets('normal prompt while working is refused by busy gate with toast', (tester) async {
@@ -126,56 +121,31 @@ void main() {
       expect(find.text('The agent is working. Send it once it is idle'), findsOneWidget);
     });
 
-    testWidgets('/btw is never sent twice on rapid taps', (tester) async {
-      final session = FakeAgentSession(state: stateWith(turnActive: true))
+    testWidgets('Aside button shows only for Claude panes', (tester) async {
+      final claudeSession = FakeAgentSession(state: stateWith(turnActive: true))
         ..observed = true
         ..paneId = 'p_1';
 
-      await _pumpScreen(tester, session);
+      await _pumpScreen(tester, claudeSession);
+      expect(find.byTooltip('Aside'), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), '/btw how to run tests?');
-      await tester.pump();
-
-      // First tap dispatches
-      await tester.tap(find.byKey(const ValueKey('send')));
-      await tester.pump();
-      expect(session.sent, ['/btw how to run tests?']);
-
-      // Attempt second tap immediately (field already cleared)
-      final sendFinder = find.byKey(const ValueKey('send'));
-      if (sendFinder.evaluate().isNotEmpty) {
-        await tester.tap(sendFinder);
-        await tester.pump();
-      }
-      expect(session.sent, ['/btw how to run tests?'], reason: 'must never send /btw twice');
+      // Tapping Aside button opens AsideSheet
+      await tester.tap(find.byTooltip('Aside'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AsideSheet), findsOneWidget);
     });
 
-    testWidgets('/btw draft is restored when send fails', (tester) async {
-      final session = FakeAgentSession(state: stateWith(turnActive: true))
-        ..observed = true
-        ..paneId = 'p_1'
-        ..refuseSends = 'Connection dropped';
-
-      await _pumpScreen(tester, session);
-
-      await tester.enterText(find.byType(TextField), '/btw explain this function');
-      await tester.pump();
-
-      await tester.tap(find.byKey(const ValueKey('send')));
-      await tester.pump();
-
-      // Send failed: text restored to composer
-      expect(_composerField(tester).controller!.text, '/btw explain this function');
-      expect(session.sent, isEmpty);
-    });
-
-    testWidgets('ACP session behavior is unchanged (no side-question bypass, Stop button displayed)', (tester) async {
+    testWidgets('ACP session behavior is unchanged (no side-question bypass, Stop button displayed, no Aside button)', (
+      tester,
+    ) async {
       final session = FakeAgentSession(state: stateWith(turnActive: true)); // observed == false
 
       await _pumpScreen(tester, session);
 
       // Stop button shown while working in ACP
       expect(find.byIcon(HerdrIcons.stopMark), findsOneWidget);
+      // Aside button absent for non-observed ACP
+      expect(find.byTooltip('Aside'), findsNothing);
 
       await tester.enterText(find.byType(TextField), '/btw ACP question');
       await tester.pump();

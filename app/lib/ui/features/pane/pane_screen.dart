@@ -36,6 +36,7 @@ import '../agent_session/attach_picker.dart';
 import '../agent_session/attach_sheet.dart';
 import '../attach/attach_kit.dart';
 import '../composer/composer_frame.dart';
+import '../../../fork/aside/aside_sheet.dart' show showAsideSheet;
 import '../create/new_agent_session_screen.dart' show openNewAgentSession;
 import '../create/session_prefill.dart' show SessionPrefill;
 import '../dictation/dictation_language_sheet.dart';
@@ -1062,26 +1063,52 @@ class _Composer extends StatelessWidget {
         builder: (context, _) {
           final hasContent = controller.text.trim().isNotEmpty || !attachments.isEmpty;
           final dictate = agent == null ? null : dictation;
+          final asideButton = agent == 'claude'
+              ? Tooltip(
+                  message: 'Aside',
+                  child: ComposerRoundButton(
+                    label: 'Aside',
+                    icon: LucideIcons.messageCircleQuestion,
+                    iconSize: IconSize.bar,
+                    ready: true,
+                    quiet: true,
+                    onPressed: () =>
+                        unawaited(showAsideSheet(context, paneId: paneId, machine: context.read<MachineConnection>())),
+                  ),
+                )
+              : null;
           if (dictate != null && acceptsInput && (dictate.listening || !hasContent)) {
-            return ComposerRoundButton(
-              label: dictate.listening ? 'Stop dictating' : 'Dictate',
-              icon: LucideIcons.mic,
-              iconSize: IconSize.bar,
-              ready: true,
-              quiet: !dictate.listening,
-              onPressed: () => unawaited(dictate.toggle()),
-              onLongPress: dictate.listening
-                  ? null
-                  : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ?asideButton,
+                ComposerRoundButton(
+                  label: dictate.listening ? 'Stop dictating' : 'Dictate',
+                  icon: LucideIcons.mic,
+                  iconSize: IconSize.bar,
+                  ready: true,
+                  quiet: !dictate.listening,
+                  onPressed: () => unawaited(dictate.toggle()),
+                  onLongPress: dictate.listening
+                      ? null
+                      : () => unawaited(showDictationLanguageSheet(context, dictate.dictation)),
+                ),
+              ],
             );
           }
-          return ComposerRoundButton(
-            label: 'Send',
-            icon: LucideIcons.arrowUp,
-            iconSize: IconSize.bar,
-            ready: acceptsInput && !sending && hasContent && attachments.canSend,
-            busy: sending,
-            onPressed: onSubmit,
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ?asideButton,
+              ComposerRoundButton(
+                label: 'Send',
+                icon: LucideIcons.arrowUp,
+                iconSize: IconSize.bar,
+                ready: acceptsInput && !sending && hasContent && attachments.canSend,
+                busy: sending,
+                onPressed: onSubmit,
+              ),
+            ],
           );
         },
       ),

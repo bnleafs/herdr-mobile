@@ -8,6 +8,7 @@ import '../../../data/acp/prompt_queue.dart' show SendDelivery;
 import '../../../data/acp/session_state.dart';
 import '../../../data/repositories/agent_session.dart';
 import '../../../data/repositories/attach_target.dart' show AttachMode;
+import '../../../fork/aside/aside_sheet.dart' show showAsideSheet;
 import '../../core/kit.dart' show HerdrIcons, IconSize;
 import '../../support/tap_guard.dart';
 import '../composer/composer_frame.dart';
@@ -161,6 +162,18 @@ class Composer extends StatelessWidget {
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (session.isObserved && session.agent == 'claude')
+                  Tooltip(
+                    message: 'Aside',
+                    child: ComposerRoundButton(
+                      label: 'Aside',
+                      icon: LucideIcons.messageCircleQuestion,
+                      iconSize: IconSize.bar,
+                      ready: true,
+                      quiet: true,
+                      onPressed: () => unawaited(showAsideSheet(context, session: session)),
+                    ),
+                  ),
                 if (working)
                   _StopButton(
                     key: const ValueKey('stop'),

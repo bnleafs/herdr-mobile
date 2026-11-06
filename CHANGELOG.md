@@ -4,6 +4,19 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.60] - 2026-11-06
+
+### Aside: native /btw wrapper with follow-ups and history
+
+- **Aside sheet**: ask quick side questions via an Aside button or `/btw <question>`
+  in the chat composer or terminal composer of Claude panes. Answers are read
+  directly from Claude Code's native `/btw` panel and formatted with the chat's
+  Markdown renderer.
+- **Follow-ups in-thread**: ask follow-up questions within the same aside thread,
+  carrying preceding context into subsequent native `/btw` prompts.
+- **Phone-only history**: browse earlier aside threads per session, reopen them,
+  or clear individual threads and clear all.
+
 ## [0.1.59] - 2026-11-06
 
 ### Automatic update installs, a new icon, and /btw from the phone

@@ -26,6 +26,7 @@ import 'agent_card.dart';
 import 'agent_more_row.dart';
 import 'agent_session_rows.dart';
 import 'agents_grouping.dart';
+import '../../../fork/background_sessions_board.dart';
 import 'batch_action_bar.dart';
 import 'batch_actions_sheet.dart';
 import 'board_selection.dart';
@@ -364,7 +365,8 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
                 child: _ConnectionStrip(troubled: troubled, onShowMachines: _showMachines),
               ),
             ),
-          if (overview.agents.isEmpty && troubled.isEmpty && sessionList.isEmpty)
+          if (overview.agents.isEmpty && troubled.isEmpty && sessionList.isEmpty) ...[
+            const SliverToBoxAdapter(child: BackgroundBoardEntry()),
             SliverFillRemaining(
               hasScrollBody: false,
               child: Padding(
@@ -375,8 +377,8 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
                   message: 'Start one in herdr and it shows here.',
                 ),
               ),
-            )
-          else ...[
+            ),
+          ] else ...[
             SliverList.builder(
               itemCount: listed.length,
               findChildIndexCallback: (key) => indexes[key],
@@ -414,6 +416,7 @@ class _AgentsScreenState extends State<AgentsScreen> with RestorationMixin {
                 final AgentFolding f => _FoldAway(key: f.key, height: f.height, onDone: () => _folded(f.agentKey)),
               },
             ),
+            const SliverToBoxAdapter(child: BackgroundBoardEntry()),
             SliverToBoxAdapter(child: SizedBox(height: listEnd)),
           ],
         ],

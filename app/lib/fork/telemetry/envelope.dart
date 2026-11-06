@@ -26,6 +26,8 @@ enum TelemetryStage {
   appUpdateDownload,
   uiStall,
   appSession,
+  backgroundList,
+  backgroundAttach,
 }
 
 /// Bounded connection path category for linkLive telemetry.

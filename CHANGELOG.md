@@ -4,6 +4,19 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.58] - 2026-11-06
+
+### Claude background sessions: list, read, and attach
+
+- **Background sessions list**: each machine shows its Claude Code background
+  sessions running under `claude daemon` (name, short folder, busy/idle glyph,
+  and relative updated time).
+- **Read-only transcript**: tap any background session to view its conversation
+  transcript read-only.
+- **Attach in terminal**: attach to a background session directly from your phone;
+  MegaWatt creates a terminal pane in the session's folder and attaches to it
+  with `claude attach '<sessionId>'`.
+
 ## [0.1.57] - 2026-11-06
 
 ### Reload chat, slash commands anywhere, and transcript diagnostics

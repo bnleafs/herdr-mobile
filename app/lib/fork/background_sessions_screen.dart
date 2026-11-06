@@ -51,10 +51,7 @@ class _BackgroundSessionsScreenState extends State<BackgroundSessionsScreen> {
     if (!silent && mounted) {
       setState(() => _loading = true);
     }
-    final result = await listBackgroundSessions(
-      widget.machine,
-      onReason: (r) => _reason = r,
-    );
+    final result = await listBackgroundSessions(widget.machine, onReason: (r) => _reason = r);
     if (!mounted) return;
     setState(() {
       _sessions = result;
@@ -67,10 +64,7 @@ class _BackgroundSessionsScreenState extends State<BackgroundSessionsScreen> {
     if (!_attachingIds.add(session.sessionId)) return;
     setState(() {});
     try {
-      final paneAgent = await attachBackgroundSession(
-        machine: widget.machine,
-        session: session,
-      );
+      final paneAgent = await attachBackgroundSession(machine: widget.machine, session: session);
       if (!mounted) return;
       await openAgent(context, paneAgent);
     } catch (e) {
@@ -86,11 +80,7 @@ class _BackgroundSessionsScreenState extends State<BackgroundSessionsScreen> {
 
   Future<void> _openTranscript(BackgroundSession session) async {
     final toaster = Toaster.of(context);
-    final loc = await ClaudeLocator().locateById(
-      widget.machine.files,
-      session.sessionId,
-      cwd: session.cwd,
-    );
+    final loc = await ClaudeLocator().locateById(widget.machine.files, session.sessionId, cwd: session.cwd);
     if (!mounted) return;
     if (loc is Located) {
       await openPastSessionTranscript(context, widget.machine, loc.path);
@@ -106,11 +96,7 @@ class _BackgroundSessionsScreenState extends State<BackgroundSessionsScreen> {
       context,
       title: session.name != null && session.name!.isNotEmpty ? session.name! : 'Claude session',
       actions: [
-        SheetAction(
-          label: 'Attach in terminal',
-          icon: LucideIcons.terminal,
-          onTap: () => unawaited(_attach(session)),
-        ),
+        SheetAction(label: 'Attach in terminal', icon: LucideIcons.terminal, onTap: () => unawaited(_attach(session))),
       ],
     );
   }
@@ -123,7 +109,10 @@ class _BackgroundSessionsScreenState extends State<BackgroundSessionsScreen> {
 
     Widget filler(Widget child) => SliverFillRemaining(
       hasScrollBody: false,
-      child: Padding(padding: EdgeInsets.only(bottom: inset), child: child),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: inset),
+        child: child,
+      ),
     );
 
     return Scaffold(
@@ -135,23 +124,17 @@ class _BackgroundSessionsScreenState extends State<BackgroundSessionsScreen> {
           slivers: [
             SliverLargeTitle.back(
               title: 'Background sessions',
-              subtitle: Text(
-                widget.machine.profile.label,
-                style: Type.secondary.copyWith(color: ds.textSecondary),
-              ),
+              subtitle: Text(widget.machine.profile.label, style: Type.secondary.copyWith(color: ds.textSecondary)),
             ),
             if (_loading && _sessions == null)
-              filler(
-                const Center(
-                  child: BusySpinner(size: IconSize.lead),
-                ),
-              )
+              filler(const Center(child: BusySpinner(size: IconSize.lead)))
             else if (sessions.isEmpty)
               filler(
                 EmptyState(
                   icon: LucideIcons.terminal,
                   title: 'No background sessions',
-                  message: _reason ?? 'Claude background sessions running on ${widget.machine.profile.label} appear here.',
+                  message:
+                      _reason ?? 'Claude background sessions running on ${widget.machine.profile.label} appear here.',
                 ),
               )
             else
@@ -161,9 +144,7 @@ class _BackgroundSessionsScreenState extends State<BackgroundSessionsScreen> {
                   final session = sessions[i];
                   final isBusy = session.isBusy;
                   final isAttaching = _attachingIds.contains(session.sessionId);
-                  final title = session.name != null && session.name!.isNotEmpty
-                      ? session.name!
-                      : 'Claude session';
+                  final title = session.name != null && session.name!.isNotEmpty ? session.name! : 'Claude session';
                   final subtitle = cwdTail(session.cwd);
                   final subtitle2 = [
                     if (session.updatedAt != null) formatAgo(session.updatedAt!, DateTime.now()),

@@ -18,12 +18,21 @@ import '../../fork/telemetry/telemetry.dart';
 /// there after a restart, until it is installed).
 @immutable
 class UpdateRecord {
-  const UpdateRecord({this.autoCheck = true, this.autoDownload = true, this.lastCheck, this.release});
+  const UpdateRecord({
+    this.autoCheck = true,
+    this.autoDownload = true,
+    this.autoInstall = true,
+    this.lastCheck,
+    this.release,
+    this.lastRunVersion,
+  });
 
   final bool autoCheck;
   final bool autoDownload;
+  final bool autoInstall;
   final DateTime? lastCheck;
   final ReleaseInfo? release;
+  final String? lastRunVersion;
 }
 
 abstract interface class UpdateStore {
@@ -35,8 +44,10 @@ abstract interface class UpdateStore {
 class PrefsUpdateStore implements UpdateStore {
   static const _auto = 'update.auto.v1';
   static const _autoDownload = 'update.autoDownload.v1';
+  static const _autoInstall = 'update.autoInstall.v1';
   static const _last = 'update.lastCheck.v1';
   static const _release = 'update.release.v1';
+  static const _lastRun = 'update.lastRunVersion.v1';
 
   @override
   Future<UpdateRecord> read() async {
@@ -45,8 +56,10 @@ class PrefsUpdateStore implements UpdateStore {
     return UpdateRecord(
       autoCheck: prefs.getBool(_auto) ?? true,
       autoDownload: prefs.getBool(_autoDownload) ?? true,
+      autoInstall: prefs.getBool(_autoInstall) ?? true,
       lastCheck: at == null ? null : DateTime.fromMillisecondsSinceEpoch(at),
       release: ReleaseInfo.decode(prefs.getString(_release)),
+      lastRunVersion: prefs.getString(_lastRun),
     );
   }
 
@@ -55,6 +68,7 @@ class PrefsUpdateStore implements UpdateStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_auto, record.autoCheck);
     await prefs.setBool(_autoDownload, record.autoDownload);
+    await prefs.setBool(_autoInstall, record.autoInstall);
     final at = record.lastCheck;
     if (at == null) {
       await prefs.remove(_last);
@@ -66,6 +80,12 @@ class PrefsUpdateStore implements UpdateStore {
       await prefs.remove(_release);
     } else {
       await prefs.setString(_release, release.encode());
+    }
+    final lastRun = record.lastRunVersion;
+    if (lastRun == null) {
+      await prefs.remove(_lastRun);
+    } else {
+      await prefs.setString(_lastRun, lastRun);
     }
   }
 }
@@ -116,12 +136,16 @@ class AppUpdate extends ChangeNotifier {
     AppVersion? current,
     DateTime Function()? now,
     this._autoDownload = true,
+    this._autoInstall = true,
   }) : _current = current ?? AppVersion.tryParse(appVersion)!,
        _now = now ?? DateTime.now;
 
   /// How long a check stays fresh. Also the wait after a failed one: a phone
   /// on a bad radio is not asked again every time the app is opened.
-  static const checkEvery = Duration(hours: 12);
+  static const checkEvery = Duration(hours: 1);
+
+  /// How old the last check must be for an app resume to trigger another check.
+  static const resumeCheckFreshness = Duration(minutes: 15);
 
   final UpdateStore store;
   final ReleaseFeed feed;
@@ -132,6 +156,7 @@ class AppUpdate extends ChangeNotifier {
 
   bool _autoCheck = true;
   bool _autoDownload;
+  bool _autoInstall;
   DateTime? _lastCheck;
   ReleaseInfo? _release;
   UpdateStage _stage = UpdateStage.idle;
@@ -144,6 +169,8 @@ class AppUpdate extends ChangeNotifier {
   File? _apk;
   UpdateDownload? _job;
   String? _autoDownloadedVersion;
+  String? _autoInstalledVersion;
+  String? _updatedToVersion;
   bool _disposed = false;
 
   /// Whether GitHub is asked about twice a day without the person asking.
@@ -151,6 +178,46 @@ class AppUpdate extends ChangeNotifier {
 
   /// Whether a newer version is downloaded automatically once found.
   bool get autoDownload => _autoDownload;
+
+  /// Whether a verified newer version is installed automatically.
+  bool get autoInstall => _autoInstall;
+
+  /// The version updated to on the first launch of a new version, or null.
+  String? get updatedToVersion => _updatedToVersion;
+
+  /// The verified APK on disk, or null.
+  File? get apk => _apk;
+
+  /// Retrieves and clears the version updated to, so the toast shows once.
+  String? takeUpdatedToVersion() {
+    final version = _updatedToVersion;
+    _updatedToVersion = null;
+    return version;
+  }
+
+  static const _pendingUserActionKey = 'update.pendingUserAction.v1';
+  static const _installStatusKey = 'update.installStatus.v1';
+  static const _installErrorKey = 'update.installError.v1';
+
+  /// Whether Android reported that user confirmation is needed for the
+  /// downloaded APK (e.g. because silent install was blocked in background).
+  /// If set and a verified APK is ready, clears the flag and returns true.
+  Future<bool> takePendingUserAction() async {
+    if (_stage != UpdateStage.ready || _release == null || _apk == null) {
+      return false;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = prefs.getBool(_pendingUserActionKey) ?? false;
+      if (pending) {
+        await prefs.remove(_pendingUserActionKey);
+        return true;
+      }
+    } on Object {
+      // Best-effort.
+    }
+    return false;
+  }
 
   /// The newer release the person can install, or null.
   ReleaseInfo? get release => _release;
@@ -183,23 +250,50 @@ class AppUpdate extends ChangeNotifier {
       final saved = await store.read();
       _autoCheck = saved.autoCheck;
       _autoDownload = saved.autoDownload;
+      _autoInstall = saved.autoInstall;
       _lastCheck = saved.lastCheck;
-      final release = saved.release;
-      if (release == null) return;
-      final known = AppVersion.tryParse(release.version)!;
-      if (known.compareTo(_current) <= 0) {
-        // Installed (or older than what is installed): its file is not needed.
-        unawaited(files.prune());
-        await store.write(UpdateRecord(autoCheck: _autoCheck, autoDownload: _autoDownload, lastCheck: _lastCheck));
-        return;
+      final lastRun = saved.lastRunVersion;
+      if (lastRun != null && lastRun != _current.toString()) {
+        _updatedToVersion = _current.toString();
       }
-      _release = release;
-      _apk = await files.verified(release);
-      if (_apk != null) _stage = UpdateStage.ready;
-      unawaited(files.prune(keep: release));
+      final release = saved.release;
+      if (release != null) {
+        final known = AppVersion.tryParse(release.version)!;
+        if (known.compareTo(_current) <= 0) {
+          // Installed (or older than what is installed): its file is not needed.
+          unawaited(files.prune());
+        } else {
+          _release = release;
+          _apk = await files.verified(release);
+          if (_apk != null) _stage = UpdateStage.ready;
+          unawaited(files.prune(keep: release));
+        }
+      }
+      await _save();
     } on Object {
       // Looking for updates is never worth keeping the person from their
       // agents: unreadable preferences or storage start it as if new.
+    } finally {
+      await checkNativeInstallStatus();
+    }
+  }
+
+  Future<void> checkNativeInstallStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final status = prefs.getInt(_installStatusKey);
+      if (status != null) {
+        await prefs.remove(_installStatusKey);
+        await prefs.remove(_installErrorKey);
+        ForkTelemetry.instance.recordStage(
+          opId: ForkTelemetry.instance.generateOpId(),
+          stage: TelemetryStage.appUpdateInstall,
+          outcome: StageOutcome.failure,
+          errorString: 'status_$status',
+        );
+      }
+    } on Object {
+      // Native install status is best-effort.
     }
   }
 
@@ -222,16 +316,49 @@ class AppUpdate extends ChangeNotifier {
     }
   }
 
-  /// The app came to the front: ask GitHub when the person allows it and the
-  /// last answer is old.
-  void onLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(checkIfDue());
+  Future<void> setAutoInstall(bool on) async {
+    if (on == _autoInstall) return;
+    _autoInstall = on;
+    _notify();
+    await _save();
   }
 
-  Future<void> checkIfDue() async {
+  /// The app came to the front or background.
+  void onLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(checkIfDue(freshness: resumeCheckFreshness));
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      maybeAutoInstall();
+    }
+  }
+
+  /// Installs a verified APK automatically in the background.
+  void maybeAutoInstall() {
+    if (!_autoInstall || _disposed || _installing) return;
+    final release = _release;
+    final apk = _apk;
+    if (_stage != UpdateStage.ready || release == null || apk == null) return;
+    if (_autoInstalledVersion == release.version) return;
+    _autoInstalledVersion = release.version;
+    unawaited(install(auto: true));
+  }
+
+  /// Installs a ready APK on cold start if no session screen is open.
+  Future<void> maybeColdStartInstall({required bool hasOpenSession}) async {
+    if (!_autoInstall || _disposed || _installing || hasOpenSession) return;
+    final release = _release;
+    final apk = _apk;
+    if (_stage != UpdateStage.ready || release == null || apk == null) return;
+    if (_autoInstalledVersion == release.version) return;
+    _autoInstalledVersion = release.version;
+    await install(auto: true);
+  }
+
+  Future<void> checkIfDue({Duration? freshness}) async {
     if (!_autoCheck || _stage != UpdateStage.idle || _release != null) return;
     final last = _lastCheck;
-    if (last != null && _now().difference(last) < checkEvery) return;
+    final interval = freshness ?? checkEvery;
+    if (last != null && _now().difference(last) < interval) return;
     await check(manual: false);
   }
 
@@ -368,13 +495,16 @@ class AppUpdate extends ChangeNotifier {
   /// Opens Android's installer on the verified APK. Without the permission to
   /// install apps Android's page for it opens instead, and Install is tapped
   /// again once it is allowed.
-  Future<void> install() async {
+  Future<void> install({bool auto = false}) async {
     final release = _release;
     final apk = _apk;
     if (_stage != UpdateStage.ready || release == null || apk == null || _installing) return;
     _installing = true;
     _problem = null;
     _needsPermission = false;
+    final stopwatch = Stopwatch()..start();
+    var outcome = auto ? StageOutcome.silent : StageOutcome.confirmed;
+    String? statusCode;
     try {
       // Android may have cleared the cache, or something cut the file, since
       // it was verified: say so and offer the download again, rather than
@@ -383,19 +513,41 @@ class AppUpdate extends ChangeNotifier {
         _apk = null;
         _stage = UpdateStage.idle;
         _problem = 'The update file is gone or changed. Download it again.';
+        outcome = StageOutcome.failure;
+        statusCode = 'file_tampered';
       } else {
-        _needsPermission = await installer.install(apk) == InstallStart.needsPermission;
+        final result = await installer.install(apk);
+        if (result == InstallStart.needsPermission) {
+          _needsPermission = true;
+          outcome = StageOutcome.pendingUserAction;
+        }
       }
     } on UpdateException catch (e) {
+      outcome = StageOutcome.failure;
       _problem = e.message;
+      statusCode = 'installer_error';
     } finally {
       _installing = false;
       _notify();
+      ForkTelemetry.instance.recordStage(
+        opId: ForkTelemetry.instance.generateOpId(),
+        stage: TelemetryStage.appUpdateInstall,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: outcome,
+        errorString: statusCode,
+      );
     }
   }
 
   Future<void> _save() => store.write(
-    UpdateRecord(autoCheck: _autoCheck, autoDownload: _autoDownload, lastCheck: _lastCheck, release: _release),
+    UpdateRecord(
+      autoCheck: _autoCheck,
+      autoDownload: _autoDownload,
+      autoInstall: _autoInstall,
+      lastCheck: _lastCheck,
+      release: _release,
+      lastRunVersion: _current.toString(),
+    ),
   );
 
   void _notify() {

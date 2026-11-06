@@ -28,6 +28,8 @@
          to confirm. Android also needs "Install unknown apps" allowed for
          herdr; the app sends the person there on the first install. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Automatic package updates without user action on Android 12+ (API 31+) -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION"/>
     <application
         android:label="MegaWatt"
         android:name="${applicationName}"
@@ -94,6 +96,10 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
+        <!-- Receives PackageInstaller commit status broadcasts -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
         <!-- The answer buttons on a notification (actions that do not open the
              app): the plugin hands a press to a background isolate, which
              forwards it to the app's main isolate. -->

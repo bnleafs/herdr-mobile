@@ -2005,15 +2005,25 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     final steered = _turnRuns;
     final before = _userMessages();
     final failure = await _sendPrompt(trimmed);
+    if (failure != null) {
+      _setProblem(failure);
+      return false;
+    }
     // `/clear` and `/new` open another log and are never a message in it.
-    if (failure == null && _opensNewLog.hasMatch(trimmed)) {
+    if (_opensNewLog.hasMatch(trimmed)) {
       _setProblem(null);
       markSeen();
       unawaited(_followNewLog());
       return true;
     }
+    if (_isBtw(trimmed)) {
+      _setProblem(null);
+      return true;
+    }
     return _afterSend(before, failure, blocks: [TextBlock(trimmed)], steered: steered);
   }
+
+  bool _isBtw(String text) => kind.id == 'claude' && RegExp(r'^/btw\s+\S', caseSensitive: false).hasMatch(text);
 
   /// Commands that start another conversation, and with it another log file.
   static final _opensNewLog = RegExp(r'^/(clear|new)$', caseSensitive: false);
@@ -2046,6 +2056,9 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     if (prompt == null || (_isSub && blocks.any((b) => b is! TextBlock))) {
       _setProblem(terminalAttachmentRefusal);
       return false;
+    }
+    if (!_isSub && _isBtw(prompt.line)) {
+      return _sendNow(blocks, prompt);
     }
     // Behind what already waits (the order the person sent them in), or after
     // the turn when asked: on the phone, where it can be edited.

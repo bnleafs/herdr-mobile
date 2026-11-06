@@ -4,6 +4,24 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.59] - 2026-11-06
+
+### Automatic update installs, a new icon, and /btw from the phone
+
+- **New icon**: the glowing figures artwork on the launcher, notifications,
+  splash and in the app.
+
+- **Automatic install**: verified updates install themselves through Android's
+  PackageInstaller session API when the app moves to the background, or on cold
+  start before the first connection if no session is open.
+- **Probe more often**: update checks run every hour (down from 12 hours) and
+  on every resume older than 15 minutes.
+- **Update toast**: a quiet "Updated to vX.Y.Z" toast appears once on the first
+  launch of a new version.
+- **Claude /btw side questions**: ask quick side questions via `/btw <question>`
+  while Claude is busy without interrupting current work or polluting chat
+  transcripts, switching to the terminal view to see the answer panel.
+
 ## [0.1.58] - 2026-11-06
 
 ### Claude background sessions: list, read, and attach

@@ -246,7 +246,16 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
     registering = false;
     // The daily look for a newer version, once the first frame is up.
     if (widget.update case final update?) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(update.checkIfDue()));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(update.checkIfDue());
+        if (update.takeUpdatedToVersion() case final version?) {
+          final overlay = _links.navigatorKey.currentState?.overlay;
+          if (overlay != null) {
+            Toaster(overlay).show('Updated to v$version');
+          }
+        }
+        _checkPendingUserAction();
+      });
     }
   }
 
@@ -259,6 +268,24 @@ class _HerdrMobileAppState extends State<HerdrMobileApp> with WidgetsBindingObse
     widget.attention?.onLifecycleState(state);
     widget.update?.onLifecycleState(state);
     ForkTelemetry.instance.sessionTracker.onLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkPendingUserAction());
+    }
+  }
+
+  void _checkPendingUserAction() {
+    final update = widget.update;
+    if (update == null) return;
+    unawaited(() async {
+      final needed = await update.takePendingUserAction();
+      if (!needed || !mounted) return;
+      final overlay = _links.navigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        final version = update.release?.version;
+        final message = version != null ? 'Update v$version is ready' : 'Update is ready';
+        Toaster(overlay).show(message, action: ToastAction('Install', () => unawaited(update.install())));
+      }
+    }());
   }
 
   /// Observed sessions stay attached in the background exactly when the

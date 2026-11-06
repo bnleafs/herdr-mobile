@@ -168,8 +168,8 @@ void main() {
       final iconHash = sha256.convert(iconBytes).toString();
       expect(
         iconHash,
-        '38f6c64f32219072b3454ac91d46cb8198cf519e1a64a10da29cf0ee94c660a5',
-        reason: 'app/assets/icon/icon.png must match exact original source hash',
+        'd478d0fbe75642902bbd1dea45d5c7255cb0b0992ff1b2fc6f41435d4585b226',
+        reason: 'app/assets/icon/icon.png must be the icon Jaya chose (v2, 2026-11-06)',
       );
 
       final fg = File('assets/icon/icon_foreground.png');

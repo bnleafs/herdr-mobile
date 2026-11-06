@@ -598,6 +598,13 @@ class _UpdateRows extends StatelessWidget {
             value: update.autoDownload,
             onChanged: (on) => unawaited(update.setAutoDownload(on)),
           ),
+          ToggleRow(
+            id: 'auto-install',
+            title: 'Install automatically',
+            subtitle: 'Installs verified updates in the background without opening Settings.',
+            value: update.autoInstall,
+            onChanged: (on) => unawaited(update.setAutoInstall(on)),
+          ),
         ],
       );
     },

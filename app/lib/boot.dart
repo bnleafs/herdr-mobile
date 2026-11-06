@@ -192,6 +192,21 @@ Future<HerdrMobileApp> bootApp({
   final notify = notifier ?? await LocalNotifier.start(accent: Ds.paper.accent);
   final monitor = network ?? ConnectivityNetworkMonitor();
   final cache = snapshotCache ?? PrefsSnapshotCache();
+  // Updating from GitHub releases is an Android thing (the release is an APK,
+  // and an iPhone cannot install one from the app); tests with their own
+  // connections have no network to ask.
+  final appUpdate = connect == null && defaultTargetPlatform == TargetPlatform.android
+      ? AppUpdate(
+          store: PrefsUpdateStore(),
+          feed: GitHubReleaseFeed(),
+          files: HttpReleaseFiles(),
+          installer: const PlatformApkInstaller(),
+        )
+      : null;
+  await appUpdate?.load();
+  if (appUpdate != null) {
+    await appUpdate.maybeColdStartInstall(hasOpenSession: agentScreens.front != null || agentScreens.hasResume);
+  }
   // The connections are made now, not when the first frame builds the app:
   // each one starts reading its cached snapshot and its transport starts
   // (worker isolate, SSH handshake) while that frame is being built.
@@ -244,18 +259,6 @@ Future<HerdrMobileApp> bootApp({
     answerer: PaneAnswerer(connection: fleet.connection),
     visibleText: visibleText,
   );
-  // Updating from GitHub releases is an Android thing (the release is an APK,
-  // and an iPhone cannot install one from the app); tests with their own
-  // connections have no network to ask.
-  final appUpdate = connect == null && defaultTargetPlatform == TargetPlatform.android
-      ? AppUpdate(
-          store: PrefsUpdateStore(),
-          feed: GitHubReleaseFeed(),
-          files: HttpReleaseFiles(),
-          installer: const PlatformApkInstaller(),
-        )
-      : null;
-  await appUpdate?.load();
   return HerdrMobileApp(
     previews: previews,
     observedSessions: observedSessions,

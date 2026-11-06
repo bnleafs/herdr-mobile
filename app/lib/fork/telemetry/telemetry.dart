@@ -162,6 +162,8 @@ class SentryTelemetrySink implements TelemetrySink {
         if (envelope.backgroundCount != null) 'backgroundCount': SentryAttribute.int(envelope.backgroundCount!),
         if (envelope.locateRoute != null) 'locateRoute': SentryAttribute.string(envelope.locateRoute!),
         if (envelope.sessionMismatch != null) 'sessionMismatch': SentryAttribute.bool(envelope.sessionMismatch!),
+        if (envelope.answerChars != null) 'answerChars': SentryAttribute.int(envelope.answerChars!),
+        if (envelope.pollCount != null) 'pollCount': SentryAttribute.int(envelope.pollCount!),
       };
 
       switch (level) {
@@ -223,6 +225,8 @@ class SentryTelemetrySink implements TelemetrySink {
             if (envelope.outcome != null) 'outcome': envelope.outcome!.name,
             if (envelope.machineLabel != null) 'machineLabel': envelope.machineLabel,
             if (envelope.agentKind != null) 'agentKind': envelope.agentKind,
+            if (envelope.answerChars != null) 'answerChars': envelope.answerChars,
+            if (envelope.pollCount != null) 'pollCount': envelope.pollCount,
           },
           timestamp: envelope.timestamp,
         ),
@@ -545,6 +549,8 @@ class ForkTelemetry {
     bool? sessionMismatch,
     bool? followUp,
     bool? incomplete,
+    int? answerChars,
+    int? pollCount,
   }) {
     if (!_enabled) return;
     final envelope = TelemetryEnvelope(
@@ -575,6 +581,8 @@ class ForkTelemetry {
       sessionMismatch: sessionMismatch,
       followUp: followUp,
       incomplete: incomplete,
+      answerChars: answerChars,
+      pollCount: pollCount,
     );
 
     if (_queue.enqueue(envelope)) {

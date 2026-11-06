@@ -105,6 +105,22 @@ void main() {
       final extraction = extractAsideFromScreen(screen.split('\n'), '/btw what is the codename?');
       expect(extraction.headerFound, isTrue);
       expect(extraction.answerText, 'The codename is BLUEFINCH.');
+      expect(extraction.canScroll, isTrue);
+    });
+
+    test('isAsideThinkingPlaceholder recognizes spinner frames and empty lines', () {
+      expect(isAsideThinkingPlaceholder(['· Answering…']), isTrue);
+      expect(isAsideThinkingPlaceholder(['✢ Answering…']), isTrue);
+      expect(isAsideThinkingPlaceholder(['✽ Answering…']), isTrue);
+      expect(isAsideThinkingPlaceholder(['✻ Answering…']), isTrue);
+      expect(isAsideThinkingPlaceholder(['✳ Answering…']), isTrue);
+      expect(isAsideThinkingPlaceholder(['✶ Answering…']), isTrue);
+      expect(isAsideThinkingPlaceholder(['Answering…']), isTrue);
+      expect(isAsideThinkingPlaceholder(['Answering...']), isTrue);
+      expect(isAsideThinkingPlaceholder([]), isTrue);
+      expect(isAsideThinkingPlaceholder(['   ']), isTrue);
+      expect(isAsideThinkingPlaceholder(['Two plus two is four.']), isFalse);
+      expect(isAsideThinkingPlaceholder(['· Answering…', 'Two plus two is four.']), isFalse);
     });
   });
 
@@ -154,30 +170,93 @@ void main() {
       expect(transport.sentLines.any((line) => line == 'f' || line == 'c'), isFalse);
     });
 
+    test(
+      'ignores Esc to close while body only shows Answering spinner frames, even across identical consecutive reads',
+      () async {
+        final transport = ScriptedHerdrTransport();
+        final api = HerdrApi(transport, machineId: 'm1');
+
+        final snapshots = [
+          '    /btw what is 2+2\n      · Answering…\n    Esc to close',
+          '    /btw what is 2+2\n      ✢ Answering…\n    Esc to close',
+          '    /btw what is 2+2\n      ✢ Answering…\n    Esc to close',
+          '    /btw what is 2+2\n      ✽ Answering…\n    Esc to close',
+          '    /btw what is 2+2\n      Two plus two is four.\n    ↑/↓ to scroll · c to copy · f to fork · Esc to close',
+          '    /btw what is 2+2\n      Two plus two is four.\n    ↑/↓ to scroll · c to copy · f to fork · Esc to close',
+        ];
+
+        int readIndex = 0;
+        transport.onReadPane = (paneId, source, lines) {
+          final text = readIndex < snapshots.length ? snapshots[readIndex] : snapshots.last;
+          readIndex++;
+          return PaneRead(text: text, truncated: false);
+        };
+
+        final updates = <String>[];
+        final runner = AsideRunner(paneId: 'p1', api: api, delay: (_) async {});
+
+        final result = await runner.ask(
+          question: 'what is 2+2',
+          pollInterval: Duration.zero,
+          onUpdate: (u) => updates.add(u),
+        );
+
+        expect(result.turn?.answer, 'Two plus two is four.');
+        expect(result.turn!.answer.contains('Answering'), isFalse);
+        expect(updates.any((u) => u.contains('Answering')), isFalse);
+        expect(transport.sentKeysList, [
+          const ['esc'],
+        ]);
+      },
+    );
+
     test('paging with down arrow when answer looks cut until no new lines', () async {
       final transport = ScriptedHerdrTransport();
       final api = HerdrApi(transport, machineId: 'm1');
 
-      // 4-line terminal where footer is at bottom (fills screen)
       int readCount = 0;
       transport.onReadPane = (paneId, source, lines) {
         readCount++;
         if (readCount <= 2) {
-          // Screen 1: initial answer
+          // Screen 1: initial answer with at least 6 lines and scroll footer
           return const PaneRead(
-            text: '    /btw cut question\n      Line 1\n      Line 2\n    Esc to close',
+            text:
+                '    /btw cut question\n'
+                '      Line 1\n'
+                '      Line 2\n'
+                '      Line 3\n'
+                '      Line 4\n'
+                '      Line 5\n'
+                '      Line 6\n'
+                '    ↑/↓ to scroll · c to copy · f to fork · Esc to close',
             truncated: false,
           );
         } else if (readCount == 3) {
           // Screen 2: scrolled down by 1 line
           return const PaneRead(
-            text: '    /btw cut question\n      Line 2\n      Line 3\n    Esc to close',
+            text:
+                '    /btw cut question\n'
+                '      Line 2\n'
+                '      Line 3\n'
+                '      Line 4\n'
+                '      Line 5\n'
+                '      Line 6\n'
+                '      Line 7\n'
+                '    ↑/↓ to scroll · c to copy · f to fork · Esc to close',
             truncated: false,
           );
         } else {
           // Screen 3: nothing new
           return const PaneRead(
-            text: '    /btw cut question\n      Line 2\n      Line 3\n    Esc to close',
+            text:
+                '    /btw cut question\n'
+                '      Line 2\n'
+                '      Line 3\n'
+                '      Line 4\n'
+                '      Line 5\n'
+                '      Line 6\n'
+                '      Line 7\n'
+                '    ↑/↓ to scroll · c to copy · f to fork · Esc to close',
             truncated: false,
           );
         }
@@ -188,7 +267,7 @@ void main() {
       final result = await runner.ask(question: 'cut question', pollInterval: Duration.zero);
 
       expect(result.outcome, StageOutcome.success);
-      expect(result.turn?.answer, 'Line 1\nLine 2\nLine 3');
+      expect(result.turn?.answer, 'Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7');
 
       // Pressed down arrow then Esc
       expect(transport.sentKeysList, [
@@ -211,13 +290,29 @@ void main() {
         if (readCount <= 2) {
           // Stable screen to trigger done detection
           return const PaneRead(
-            text: '    /btw infinite\n      Line 1\n      Line 2\n    Esc to close',
+            text:
+                '    /btw infinite\n'
+                '      Line 1\n'
+                '      Line 2\n'
+                '      Line 3\n'
+                '      Line 4\n'
+                '      Line 5\n'
+                '      Line 6\n'
+                '    ↑/↓ to scroll · c to copy · f to fork · Esc to close',
             truncated: false,
           );
         }
         // Keep producing new line on each down press
         return PaneRead(
-          text: '    /btw infinite\n      Line ${readCount - 1}\n      Line $readCount\n    Esc to close',
+          text:
+              '    /btw infinite\n'
+              '      Line ${readCount - 1}\n'
+              '      Line $readCount\n'
+              '      Line ${readCount + 1}\n'
+              '      Line ${readCount + 2}\n'
+              '      Line ${readCount + 3}\n'
+              '      Line ${readCount + 4}\n'
+              '    ↑/↓ to scroll · c to copy · f to fork · Esc to close',
           truncated: false,
         );
       };

@@ -84,10 +84,11 @@ class AsideScreenExtraction {
     required this.footerFound,
     required this.answerLines,
     required this.answerText,
-    required this.headerLineIndex,
-    required this.lastHeaderLineIndex,
-    required this.footerLineIndex,
-    required this.looksCut,
+    this.headerLineIndex = -1,
+    this.lastHeaderLineIndex = -1,
+    this.footerLineIndex = -1,
+    this.looksCut = false,
+    this.canScroll = false,
   });
 
   final bool headerFound;
@@ -98,6 +99,16 @@ class AsideScreenExtraction {
   final int lastHeaderLineIndex;
   final int footerLineIndex;
   final bool looksCut;
+  final bool canScroll;
+}
+
+/// Returns true when [lines] has no non-empty lines, or every non-empty trimmed
+/// line matches the Claude /btw thinking spinner placeholder.
+bool isAsideThinkingPlaceholder(List<String> lines) {
+  final nonEmpty = lines.map((line) => line.trim()).where((line) => line.isNotEmpty).toList();
+  if (nonEmpty.isEmpty) return true;
+  final re = RegExp(r'^[^\w\s]?\s*Answering(?:…|\.\.\.)$');
+  return nonEmpty.every(re.hasMatch);
 }
 
 /// Parses the visible pane screen lines looking for the matching /btw header, answer and footer.
@@ -112,6 +123,7 @@ AsideScreenExtraction extractAsideFromScreen(List<String> screenLines, String se
       lastHeaderLineIndex: -1,
       footerLineIndex: -1,
       looksCut: false,
+      canScroll: false,
     );
   }
 
@@ -171,6 +183,7 @@ AsideScreenExtraction extractAsideFromScreen(List<String> screenLines, String se
       lastHeaderLineIndex: -1,
       footerLineIndex: -1,
       looksCut: false,
+      canScroll: false,
     );
   }
 
@@ -187,11 +200,25 @@ AsideScreenExtraction extractAsideFromScreen(List<String> screenLines, String se
       ? screenLines.sublist(headerEnd + 1, footerIndex)
       : screenLines.sublist(headerEnd + 1);
 
-  final answerText = stripCommonIndent(rawAnswerLines);
+  if (isAsideThinkingPlaceholder(rawAnswerLines)) {
+    return AsideScreenExtraction(
+      headerFound: true,
+      footerFound: false,
+      answerLines: const [],
+      answerText: '',
+      headerLineIndex: headerStart,
+      lastHeaderLineIndex: headerEnd,
+      footerLineIndex: -1,
+      looksCut: false,
+      canScroll: false,
+    );
+  }
 
-  final bool looksCut =
-      footerFound &&
-      (footerIndex >= screenLines.length - 2 || (footerIndex - headerStart + 1) >= screenLines.length - 2);
+  final answerText = stripCommonIndent(rawAnswerLines);
+  final footerLine = footerFound ? screenLines[footerIndex] : '';
+  final bool canScroll = footerFound && footerLine.contains('to scroll');
+
+  final bool looksCut = footerFound && canScroll && rawAnswerLines.length >= 6;
 
   return AsideScreenExtraction(
     headerFound: true,
@@ -202,6 +229,7 @@ AsideScreenExtraction extractAsideFromScreen(List<String> screenLines, String se
     lastHeaderLineIndex: headerEnd,
     footerLineIndex: footerIndex,
     looksCut: looksCut,
+    canScroll: canScroll,
   );
 }
 
@@ -296,6 +324,20 @@ class AsideRunner {
     String capturedAnswer = '';
     bool incomplete = false;
     StageOutcome outcome = StageOutcome.success;
+    int polls = 0;
+
+    void recordAskTelemetry({required StageOutcome outcome, required bool incomplete}) {
+      ForkTelemetry.instance.recordStage(
+        opId: opId,
+        stage: TelemetryStage.asideAsk,
+        durationMs: stopwatch.elapsedMilliseconds,
+        outcome: outcome,
+        followUp: isFollowUp,
+        incomplete: incomplete,
+        answerChars: capturedAnswer.length,
+        pollCount: polls,
+      );
+    }
 
     try {
       // (b) Type exactly one line /btw <text> through the send path plus Enter.
@@ -316,6 +358,7 @@ class AsideRunner {
           break;
         }
 
+        polls++;
         final read = await api.readPane(paneId, source: ReadSource.visible);
         final extraction = extractAsideFromScreen(read.text.split('\n'), sentCommand);
 
@@ -330,7 +373,8 @@ class AsideRunner {
             if (previousHadFooter && previousText == extraction.answerText) {
               // Done detection triggered!
               // (d) if the answer looks cut, press ↓ page by page appending new lines until nothing new arrives.
-              if (extraction.looksCut && !_stopped) {
+              final looksCut = extraction.canScroll && extraction.answerLines.length >= 6;
+              if (looksCut && !_stopped) {
                 var collected = List<String>.of(extraction.answerLines);
                 int presses = 0;
                 while (presses < 30 && !_stopped) {
@@ -377,14 +421,7 @@ class AsideRunner {
         incomplete: incomplete,
       );
 
-      ForkTelemetry.instance.recordStage(
-        opId: opId,
-        stage: TelemetryStage.asideAsk,
-        durationMs: stopwatch.elapsedMilliseconds,
-        outcome: outcome,
-        followUp: isFollowUp,
-        incomplete: incomplete,
-      );
+      recordAskTelemetry(outcome: outcome, incomplete: incomplete);
 
       return AsideRunResult(turn: finalTurn, outcome: outcome, incomplete: incomplete);
     } catch (e) {
@@ -393,14 +430,7 @@ class AsideRunner {
         await api.sendKeys(paneId, const ['esc']);
       } catch (_) {}
 
-      ForkTelemetry.instance.recordStage(
-        opId: opId,
-        stage: TelemetryStage.asideAsk,
-        durationMs: stopwatch.elapsedMilliseconds,
-        outcome: StageOutcome.failure,
-        followUp: isFollowUp,
-        incomplete: true,
-      );
+      recordAskTelemetry(outcome: StageOutcome.failure, incomplete: true);
 
       return AsideRunResult(
         turn: AsideTurn(

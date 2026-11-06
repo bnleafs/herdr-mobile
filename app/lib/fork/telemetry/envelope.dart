@@ -29,6 +29,8 @@ enum TelemetryStage {
   appSession,
   backgroundList,
   backgroundAttach,
+  asideAsk,
+  asideClear,
 }
 
 /// Bounded connection path category for linkLive telemetry.
@@ -75,6 +77,8 @@ class TelemetryEnvelope {
     this.installId,
     this.locateRoute,
     this.sessionMismatch,
+    this.followUp,
+    this.incomplete,
     this.user = 'jaya',
   });
 
@@ -105,6 +109,8 @@ class TelemetryEnvelope {
   final String? installId;
   final String? locateRoute;
   final bool? sessionMismatch;
+  final bool? followUp;
+  final bool? incomplete;
   final String user;
 
   /// Serializes to a strongly-typed map.
@@ -136,6 +142,8 @@ class TelemetryEnvelope {
     'installId': ?installId,
     'locateRoute': ?locateRoute,
     'sessionMismatch': ?sessionMismatch,
+    'followUp': ?followUp,
+    'incomplete': ?incomplete,
     'user': user,
   };
 }

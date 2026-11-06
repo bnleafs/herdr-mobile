@@ -543,6 +543,8 @@ class ForkTelemetry {
     int? backgroundCount,
     String? locateRoute,
     bool? sessionMismatch,
+    bool? followUp,
+    bool? incomplete,
   }) {
     if (!_enabled) return;
     final envelope = TelemetryEnvelope(
@@ -571,6 +573,8 @@ class ForkTelemetry {
       installId: _installId,
       locateRoute: locateRoute,
       sessionMismatch: sessionMismatch,
+      followUp: followUp,
+      incomplete: incomplete,
     );
 
     if (_queue.enqueue(envelope)) {

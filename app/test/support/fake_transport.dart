@@ -89,6 +89,10 @@ class FakeTransport implements HerdrTransport {
     return switch (method) {
       'ping' => {'type': 'pong', 'version': (snapshot['version'] as String)},
       'session.snapshot' => {'type': 'session_snapshot', 'snapshot': snapshot},
+      'pane.read' => {
+        'type': 'pane_read',
+        'read': {'text': '', 'truncated': false},
+      },
       _ => {'type': 'ok'},
     };
   }

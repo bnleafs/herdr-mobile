@@ -4,6 +4,20 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.61] - 2026-11-06
+
+### Aside: ignore thinking spinner frames and accurate completion detection
+
+- **Aside spinner suppression**: wait for Claude Code's actual `/btw` answer
+  instead of prematurely capturing thinking spinner placeholder frames
+  (`· Answering…`, `✢ Answering…`, etc.) when `Esc to close` is displayed
+  during thought.
+- **Scrollable answer paging**: trigger down-arrow paging only when Claude's
+  footer indicates scrollable content (`to scroll`) and the answer has at least
+  6 lines, avoiding spurious paging on short answers.
+- **Aside telemetry**: record answer character length and poll count on each
+  `asideAsk` completion and failure.
+
 ## [0.1.60] - 2026-11-06
 
 ### Aside: native /btw wrapper with follow-ups and history

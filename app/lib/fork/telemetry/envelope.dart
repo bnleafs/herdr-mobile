@@ -79,6 +79,8 @@ class TelemetryEnvelope {
     this.sessionMismatch,
     this.followUp,
     this.incomplete,
+    this.answerChars,
+    this.pollCount,
     this.user = 'jaya',
   });
 
@@ -111,6 +113,8 @@ class TelemetryEnvelope {
   final bool? sessionMismatch;
   final bool? followUp;
   final bool? incomplete;
+  final int? answerChars;
+  final int? pollCount;
   final String user;
 
   /// Serializes to a strongly-typed map.
@@ -144,6 +148,8 @@ class TelemetryEnvelope {
     'sessionMismatch': ?sessionMismatch,
     'followUp': ?followUp,
     'incomplete': ?incomplete,
+    'answerChars': ?answerChars,
+    'pollCount': ?pollCount,
     'user': user,
   };
 }

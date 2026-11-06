@@ -4,6 +4,15 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.56] - 2026-11-06
+
+### No "Live from terminal" panel in chats
+
+- **Quieter chat while the agent works**: the grey "Live from terminal" panel
+  (the raw last lines of the terminal under the conversation) is gone. The
+  Working row still says how long the agent has been at it, and the full
+  terminal is one tap away.
+
 ## [0.1.55] - 2026-11-06
 
 ### One New session form, MegaWatt everywhere, quieter loading, settings that follow your account

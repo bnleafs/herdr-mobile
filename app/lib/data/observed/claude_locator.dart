@@ -158,6 +158,9 @@ class ClaudeLocator implements SessionLogLocator {
     }
   }
 
+  /// Public entry point for locating a Claude session log by [id] and optional [cwd].
+  Future<LogLocation> locateById(RemoteFiles files, String id, {String? cwd}) => _byId(files, id, cwd: cwd);
+
   /// The log of session [id]: in the folder its working directory names, else
   /// in whichever project folder holds it (a symlinked or renamed cwd).
   Future<LogLocation> _byId(RemoteFiles files, String id, {String? cwd}) async {

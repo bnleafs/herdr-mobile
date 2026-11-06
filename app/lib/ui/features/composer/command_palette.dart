@@ -31,7 +31,8 @@ class CommandPalette extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([input, model]),
     builder: (context, _) {
-      final matches = model.match(input.text);
+      final token = commandAt(input.value);
+      final matches = token == null ? const <SlashCommand>[] : model.match(token.text);
       if (matches.isEmpty) return const SizedBox.shrink();
       final ds = context.ds;
       final rows = matches.length < _visibleRows ? matches.length.toDouble() : _visibleRows;
@@ -85,7 +86,11 @@ class HideWhileCommanding extends StatelessWidget {
     if (model == null) return child;
     return ListenableBuilder(
       listenable: Listenable.merge([input, model]),
-      builder: (context, child) => model.match(input.text).isEmpty ? child! : const SizedBox.shrink(),
+      builder: (context, child) {
+        final token = commandAt(input.value);
+        final matches = token == null ? const <SlashCommand>[] : model.match(token.text);
+        return matches.isEmpty ? child! : const SizedBox.shrink();
+      },
       child: child,
     );
   }

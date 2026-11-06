@@ -10,8 +10,10 @@ sealed class LogLocation {
 
 /// The log is at [path] (validated: see [isReadableLogPath]).
 final class Located extends LogLocation {
-  const Located(this.path);
+  const Located(this.path, {this.route, this.sessionMismatch});
   final String path;
+  final String? route;
+  final bool? sessionMismatch;
 }
 
 /// The agent has not written its file yet (a session has none until the first

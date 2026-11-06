@@ -217,10 +217,82 @@ class CommandPaletteModel extends ChangeNotifier {
 /// Puts the chosen command into the composer, ready for its arguments, and
 /// keeps the keyboard up.
 void fillCommand(TextEditingController input, FocusNode focus, SlashCommand command) {
-  final text = '${command.text} ';
-  input.value = TextEditingValue(
-    text: text,
-    selection: TextSelection.collapsed(offset: text.length),
-  );
+  final token = commandAt(input.value);
+  final inserted = '${command.text} ';
+  final text = input.text;
+  if (token != null) {
+    final newText = text.replaceRange(token.start, token.end, inserted);
+    input.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: token.start + inserted.length),
+    );
+  } else {
+    input.value = TextEditingValue(
+      text: inserted,
+      selection: TextSelection.collapsed(offset: inserted.length),
+    );
+  }
   focus.requestFocus();
 }
+
+/// A command or skill token containing the caret in the composer.
+class CommandToken {
+  const CommandToken({required this.start, required this.end, required this.text});
+
+  final int start;
+  final int end;
+  final String text;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is CommandToken && other.start == start && other.end == end && other.text == text;
+
+  @override
+  int get hashCode => Object.hash(start, end, text);
+
+  @override
+  String toString() => 'CommandToken($start..$end: "$text")';
+}
+
+/// The `/` or `$` command word containing the caret in [v], if any.
+///
+/// Returns the token when it starts the draft or follows whitespace, contains
+/// no whitespace inside, and the selection is collapsed. In every other case
+/// (non-collapsed selection, non-touching caret, or a word not starting with
+/// `/` or `$`), returns null.
+CommandToken? commandAt(TextEditingValue v) {
+  if (v.selection.isValid && !v.selection.isCollapsed) return null;
+  final cursor = v.selection.isValid ? v.selection.baseOffset : v.text.length;
+  final text = v.text;
+  if (cursor < 0 || cursor > text.length) return null;
+
+  int start;
+  int end;
+
+  if (cursor < text.length && !_isWhitespace(text.codeUnitAt(cursor))) {
+    start = cursor;
+    while (start > 0 && !_isWhitespace(text.codeUnitAt(start - 1))) {
+      start--;
+    }
+    end = cursor;
+    while (end < text.length && !_isWhitespace(text.codeUnitAt(end))) {
+      end++;
+    }
+  } else if (cursor > 0 && !_isWhitespace(text.codeUnitAt(cursor - 1))) {
+    end = cursor;
+    start = cursor - 1;
+    while (start > 0 && !_isWhitespace(text.codeUnitAt(start - 1))) {
+      start--;
+    }
+  } else {
+    return null;
+  }
+
+  final first = text[start];
+  if (first != '/' && first != r'$') return null;
+  if (start > 0 && !_isWhitespace(text.codeUnitAt(start - 1))) return null;
+
+  return CommandToken(start: start, end: end, text: text.substring(start, end));
+}
+
+bool _isWhitespace(int codeUnit) => codeUnit <= 0x20 || codeUnit == 0xA0;

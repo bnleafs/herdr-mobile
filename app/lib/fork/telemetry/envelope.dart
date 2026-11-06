@@ -15,6 +15,7 @@ enum TelemetryStage {
   logRead,
   fallback,
   userRetry,
+  chatReload,
   error,
   linkLive,
   chatContentShown,
@@ -69,6 +70,8 @@ class TelemetryEnvelope {
     this.foregroundCount,
     this.backgroundCount,
     this.installId,
+    this.locateRoute,
+    this.sessionMismatch,
     this.user = 'jaya',
   });
 
@@ -97,6 +100,8 @@ class TelemetryEnvelope {
   final int? foregroundCount;
   final int? backgroundCount;
   final String? installId;
+  final String? locateRoute;
+  final bool? sessionMismatch;
   final String user;
 
   /// Serializes to a strongly-typed map.
@@ -126,6 +131,8 @@ class TelemetryEnvelope {
     'foregroundCount': ?foregroundCount,
     'backgroundCount': ?backgroundCount,
     'installId': ?installId,
+    'locateRoute': ?locateRoute,
+    'sessionMismatch': ?sessionMismatch,
     'user': user,
   };
 }

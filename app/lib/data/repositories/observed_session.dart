@@ -1161,6 +1161,22 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     _refresh();
   }
 
+  @override
+  Future<void> reload() async {
+    if (_disposed || _backgroundedAt != null) return;
+    _failure = null;
+    _attempt = 0;
+    _locatedFor = null;
+    _resetLog();
+    _followedPath = null;
+    _tailBytes = null;
+    _head = null;
+    _ready = false;
+    _logLink = AgentLink.connecting;
+    if (held) _restartFollow();
+    _refresh();
+  }
+
   // -- the log ------------------------------------------------------------------
 
   /// The log being followed (the main agent's, or a subagent's), once found.
@@ -1251,8 +1267,13 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
               await _sleepLocate(locateDelay);
               locateDelay = locateDelay * 2 > _locateMax ? _locateMax : locateDelay * 2;
               continue;
-            case Located(:final path):
-              ForkTelemetry.instance.recordStage(opId: _opId, stage: TelemetryStage.transcriptLocate);
+            case Located(:final path, :final route, :final sessionMismatch):
+              ForkTelemetry.instance.recordStage(
+                opId: _opId,
+                stage: TelemetryStage.transcriptLocate,
+                locateRoute: route,
+                sessionMismatch: sessionMismatch,
+              );
               locateDelay = _locateEvery;
               if (_waiting != null) {
                 _waiting = null;

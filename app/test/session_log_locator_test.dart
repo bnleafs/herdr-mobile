@@ -199,6 +199,59 @@ void main() {
       },
     );
 
+    test('a bg pid file whose sessionId differs from pane.session locates the pid file log', () async {
+      const oldSid = '5c0f1111-2222-3333-4444-555566667777';
+      const bgSid = '9b2b0000-1111-2222-3333-444455556666';
+      final oldPath = '/home/dev/.claude/projects/-work-app/$oldSid.jsonl';
+      final bgPath = '/home/dev/.claude/projects/-work-app/$bgSid.jsonl';
+      final fs = FakeFs()
+        ..addFile(oldPath, '{}\n')
+        ..addFile(bgPath, '{}\n')
+        ..addFile(
+          '/home/dev/.claude/sessions/4242.json',
+          '{"pid":4242,"sessionId":"$bgSid","cwd":"/work/app","kind":"bg"}',
+        );
+
+      final pane = _pane(session: _ref('claude', 'id', oldSid));
+      final found = await locator.locateWith(
+        _files(fs),
+        (_) async => [const PaneProcess(pid: 4242, name: '2.1.293', argv0: 'claude')],
+        pane,
+      );
+
+      expect(found, isA<Located>());
+      final located = found as Located;
+      expect(located.path, bgPath);
+      expect(located.route, 'process');
+      expect(located.sessionMismatch, isTrue);
+    });
+
+    test('an unknown kind pid file still falls back to pane.session', () async {
+      const oldSid = '5c0f1111-2222-3333-4444-555566667777';
+      const sdkSid = '9b2b0000-1111-2222-3333-444455556666';
+      final oldPath = '/home/dev/.claude/projects/-work-app/$oldSid.jsonl';
+      final sdkPath = '/home/dev/.claude/projects/-work-app/$sdkSid.jsonl';
+      final fs = FakeFs()
+        ..addFile(oldPath, '{}\n')
+        ..addFile(sdkPath, '{}\n')
+        ..addFile(
+          '/home/dev/.claude/sessions/4242.json',
+          '{"pid":4242,"sessionId":"$sdkSid","cwd":"/work/app","kind":"sdk"}',
+        );
+
+      final pane = _pane(session: _ref('claude', 'id', oldSid));
+      final found = await locator.locateWith(
+        _files(fs),
+        (_) async => [const PaneProcess(pid: 4242, name: '2.1.293', argv0: 'claude')],
+        pane,
+      );
+
+      expect(found, isA<Located>());
+      final located = found as Located;
+      expect(located.path, oldPath);
+      expect(located.route, 'hookId');
+    });
+
     test('the board offers the chat for any claude pane', () {
       expect(locator.mayLocate(_pane()), isTrue);
       expect(locator.mayLocate(_pane(agent: 'omp')), isFalse);

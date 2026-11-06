@@ -4,6 +4,20 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.57] - 2026-11-06
+
+### Reload chat, slash commands anywhere, and transcript diagnostics
+
+- **Better transcript finding**: a pane running a Claude Code background
+  (`bg`) session is matched to its own transcript, and the app now records
+  how it found the transcript, so a chat that drifts from its terminal shows
+  up in diagnostics.
+- **Reload chat**: a new "Reload chat" action in the session sheet lets you
+  re-find and re-read the conversation from scratch at any time.
+- **Slash commands anywhere**: typing `/` or `$` mid-sentence opens the command
+  palette for that word, and picking a command replaces only that word while
+  leaving the rest of the draft intact.
+
 ## [0.1.56] - 2026-11-06
 
 ### No "Live from terminal" panel in chats

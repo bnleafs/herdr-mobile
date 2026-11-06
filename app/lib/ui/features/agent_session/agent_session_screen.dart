@@ -280,10 +280,9 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
     if (widget.agent case final agent?) _screens?.keepDraft(agent, _input.text);
   }
 
-  /// A `/` or `$` at the start of the composer is the cue to learn the commands.
+  /// A `/` or `$` command word in the composer is the cue to learn the commands.
   void _onInput() {
-    final text = _input.text;
-    if (text.startsWith('/') || text.startsWith(r'$')) _commands.ensureLoaded();
+    if (commandAt(_input.value) != null) _commands.ensureLoaded();
   }
 
   @override

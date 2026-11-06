@@ -535,7 +535,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('plain text and a slash after the first word show nothing', (tester) async {
+    testWidgets('plain text and a slash inside a word show nothing; a slash word after text opens it', (tester) async {
       await pumpPane(tester);
 
       await tester.enterText(composer(), 'hello');
@@ -543,9 +543,14 @@ void main() {
       await tester.pump();
       expect(find.text('/compact'), findsNothing);
 
-      await tester.enterText(composer(), 'explain /co');
+      await tester.enterText(composer(), 'explain a/co');
       await tester.pump();
       expect(find.text('/compact'), findsNothing);
+
+      // Fork F13: a command word mid-draft opens the palette for that word.
+      await tester.enterText(composer(), 'explain /co');
+      await tester.pump();
+      expect(find.text('/compact'), findsOneWidget);
       await teardown(tester);
     });
 

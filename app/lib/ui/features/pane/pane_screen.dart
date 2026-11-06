@@ -475,12 +475,11 @@ class _PaneViewState extends State<_PaneView> {
     super.dispose();
   }
 
-  /// A `/` or `$` at the start of the composer is the cue to learn the commands.
+  /// A `/` or `$` command word in the composer is the cue to learn the commands.
   /// The draft is kept outside the screen as it is typed.
   void _onInput() {
     _screens?.keepDraft(widget.agent, _input.text);
-    final text = _input.text;
-    if (text.startsWith('/') || text.startsWith(r'$')) _commands.ensureLoaded();
+    if (commandAt(_input.value) != null) _commands.ensureLoaded();
   }
 
   /// A key row key, with Ctrl/Alt in front when one is armed.

@@ -344,6 +344,41 @@ void main() {
       expect(session.waiting, isNull);
       expect(session.state.toolCalls, hasLength(1));
     });
+
+    test('after reload an observed session re-runs the locator and follows the newly located path', () async {
+      final locator = _Scripted()..found = '/path/one.jsonl';
+      final kind = ObservedKind(id: 'test', label: 'Test Agent', locator: locator, newMapper: ClaudeLogMapper.new);
+      final rig = await ObservedRig.create(agent: 'test', log: '/path/one.jsonl');
+      addTearDown(rig.dispose);
+      rig.transport.fs = FakeFs()
+        ..addFile('/path/one.jsonl', '{}\n')
+        ..addFile('/path/two.jsonl', '{}\n');
+
+      final session = ObservedAgentSession(
+        machine: rig.machine,
+        paneId: 'w1:p1',
+        kind: kind,
+        source: rig.source,
+        mapper: kind.newMapper,
+        previews: rig.previews,
+        answerGrace: const Duration(seconds: 30),
+      );
+      addTearDown(session.dispose);
+
+      session.acquire();
+      await eventually(() => rig.source.calls.isNotEmpty);
+      expect(rig.source.calls.last.path, '/path/one.jsonl');
+      expect(session.logPath, '/path/one.jsonl');
+      expect(locator.asked, 1);
+
+      // Now the locator points to another path.
+      locator.found = '/path/two.jsonl';
+      await session.reload();
+
+      await eventually(() => rig.source.calls.length >= 2 && rig.source.calls.last.path == '/path/two.jsonl');
+      expect(session.logPath, '/path/two.jsonl');
+      expect(locator.asked, 2);
+    });
   });
 
   group('a log that cannot be found', () {

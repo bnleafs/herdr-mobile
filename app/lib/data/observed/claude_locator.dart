@@ -42,6 +42,9 @@ class ClaudeLocator implements SessionLogLocator {
   /// Grace window before falling back to Unlinked for a Claude process without a pid file.
   static const graceWindow = Duration(seconds: 90);
 
+  /// Kinds of sessions that write transcripts: interactive runs and forked background sessions.
+  static const _validKinds = {'interactive', 'bg'};
+
   static final _sessionId = RegExp(r'^[0-9a-f-]{36}$');
   static final _unsafeInName = RegExp(r'[^A-Za-z0-9]');
 
@@ -72,10 +75,14 @@ class ClaudeLocator implements SessionLogLocator {
       if (session.kind == 'path' && isReadableLogPath(session.value)) {
         // herdr reports the path when the session starts; the file comes with
         // the first message.
-        return await _exists(files, session.value) ? Located(session.value) : const NotYet(notYetWhy);
+        return await _exists(files, session.value)
+            ? Located(session.value, route: 'hookPath')
+            : const NotYet(notYetWhy);
       }
       if (session.kind == 'id' && _sessionId.hasMatch(session.value)) {
-        return _byId(files, session.value, cwd: pane.cwd);
+        final loc = await _byId(files, session.value, cwd: pane.cwd);
+        if (loc is Located) return Located(loc.path, route: 'hookId');
+        return loc;
       }
     }
     if (missingPid != null) {
@@ -110,11 +117,16 @@ class ClaudeLocator implements SessionLogLocator {
       }
       // The file must be this process's own: a stale one of a crashed process
       // whose pid was reused names another session.
-      if (json == null || json['kind'] != 'interactive' || json['pid'] != p.pid) continue;
+      // Forked and resumed background sessions write 'bg'; interactive runs write 'interactive'.
+      if (json == null || !_validKinds.contains(json['kind']) || json['pid'] != p.pid) continue;
       final id = json['sessionId'];
       if (id is! String || !_sessionId.hasMatch(id)) continue;
       final cwd = json['cwd'];
       final loc = await _byId(files, id, cwd: cwd is String ? cwd : pane.cwd);
+      if (loc is Located) {
+        final mismatch = pane.session?.kind == 'id' && pane.session!.value != id;
+        return (Located(loc.path, route: 'process', sessionMismatch: mismatch ? true : null), p.pid);
+      }
       return (loc, p.pid);
     }
     return (null, missingPid);

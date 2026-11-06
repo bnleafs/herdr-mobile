@@ -159,6 +159,8 @@ class SubagentRunSession extends ChangeNotifier implements AgentSessionView {
   @override
   Future<void> reattach() async {}
   @override
+  Future<void> reload() async {}
+  @override
   void acquire() {}
   @override
   void release() {}

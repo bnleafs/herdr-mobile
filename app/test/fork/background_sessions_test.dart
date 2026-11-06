@@ -54,31 +54,17 @@ void main() {
         null,
       ];
       for (final id in invalidIds) {
-        final json = {
-          'kind': 'bg',
-          'sessionId': id,
-          'cwd': '/Users/dev/project',
-        };
+        final json = {'kind': 'bg', 'sessionId': id, 'cwd': '/Users/dev/project'};
         expect(BackgroundSession.fromJson(json), isNull, reason: 'id: $id');
       }
     });
 
     test('drops sessions with empty or non-string cwd', () {
       expect(
-        BackgroundSession.fromJson({
-          'kind': 'bg',
-          'sessionId': 'e62b0838-5182-4467-bc13-8ea98a96e8e1',
-          'cwd': '',
-        }),
+        BackgroundSession.fromJson({'kind': 'bg', 'sessionId': 'e62b0838-5182-4467-bc13-8ea98a96e8e1', 'cwd': ''}),
         isNull,
       );
-      expect(
-        BackgroundSession.fromJson({
-          'kind': 'bg',
-          'sessionId': 'e62b0838-5182-4467-bc13-8ea98a96e8e1',
-        }),
-        isNull,
-      );
+      expect(BackgroundSession.fromJson({'kind': 'bg', 'sessionId': 'e62b0838-5182-4467-bc13-8ea98a96e8e1'}), isNull);
     });
   });
 
@@ -127,10 +113,7 @@ void main() {
     setUp(() async {
       fs = FakeFs();
       harness = await CreateHarness.create([
-        (
-          profile: profileOf('m1', 'mac-pro', enabled: true),
-          snapshot: snapshotJson(),
-        ),
+        (profile: profileOf('m1', 'mac-pro', enabled: true), snapshot: snapshotJson()),
       ]);
       harness.stubs['m1']!.fs = fs;
       machine = harness.connection('m1');
@@ -144,42 +127,49 @@ void main() {
       fs.addDir(sessDir);
 
       // Valid busy session
-      fs.addFile('$sessDir/101.json', jsonEncode({
-        'kind': 'bg',
-        'sessionId': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        'cwd': '/work/one',
-        'name': 'task-a',
-        'status': 'busy',
-        'updatedAt': 10000,
-      }));
+      fs.addFile(
+        '$sessDir/101.json',
+        jsonEncode({
+          'kind': 'bg',
+          'sessionId': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          'cwd': '/work/one',
+          'name': 'task-a',
+          'status': 'busy',
+          'updatedAt': 10000,
+        }),
+      );
 
       // Valid idle session (newer)
-      fs.addFile('$sessDir/102.json', jsonEncode({
-        'kind': 'bg',
-        'sessionId': 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-        'cwd': '/work/two',
-        'name': 'task-b',
-        'status': 'idle',
-        'updatedAt': 20000,
-      }));
+      fs.addFile(
+        '$sessDir/102.json',
+        jsonEncode({
+          'kind': 'bg',
+          'sessionId': 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          'cwd': '/work/two',
+          'name': 'task-b',
+          'status': 'idle',
+          'updatedAt': 20000,
+        }),
+      );
 
       // Interactive session (must be skipped)
-      fs.addFile('$sessDir/103.json', jsonEncode({
-        'kind': 'interactive',
-        'sessionId': 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-        'cwd': '/work/three',
-      }));
+      fs.addFile(
+        '$sessDir/103.json',
+        jsonEncode({'kind': 'interactive', 'sessionId': 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cwd': '/work/three'}),
+      );
 
       // Invalid json with stray trailing } (must be skipped silently)
       fs.addFile('$sessDir/104.json', '{"kind":"bg","sessionId":"dddddddd-dddd-dddd-dddd-dddddddddddd"}}');
 
       // Oversized file > 64KB (must be skipped)
-      final huge = utf8.encode(jsonEncode({
-        'kind': 'bg',
-        'sessionId': 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-        'cwd': '/work/five',
-        'padding': 'x' * (65 * 1024),
-      }));
+      final huge = utf8.encode(
+        jsonEncode({
+          'kind': 'bg',
+          'sessionId': 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+          'cwd': '/work/five',
+          'padding': 'x' * (65 * 1024),
+        }),
+      );
       fs.addFile('$sessDir/105.json', Uint8List.fromList(huge));
 
       final sessions = await listBackgroundSessions(machine);
@@ -196,13 +186,16 @@ void main() {
 
       for (var i = 0; i < 70; i++) {
         final padded = i.toString().padLeft(2, '0');
-        fs.addFile('$sessDir/$padded.json', jsonEncode({
-          'kind': 'bg',
-          'sessionId': '00000000-0000-0000-0000-0000000000$padded',
-          'cwd': '/work/$padded',
-          'status': 'idle',
-          'updatedAt': i * 100,
-        }));
+        fs.addFile(
+          '$sessDir/$padded.json',
+          jsonEncode({
+            'kind': 'bg',
+            'sessionId': '00000000-0000-0000-0000-0000000000$padded',
+            'cwd': '/work/$padded',
+            'status': 'idle',
+            'updatedAt': i * 100,
+          }),
+        );
       }
 
       final sessions = await listBackgroundSessions(machine);
@@ -225,10 +218,7 @@ void main() {
 
     setUp(() async {
       harness = await CreateHarness.create([
-        (
-          profile: profileOf('m1', 'mac-pro', enabled: true),
-          snapshot: snapshotJson(),
-        ),
+        (profile: profileOf('m1', 'mac-pro', enabled: true), snapshot: snapshotJson()),
       ]);
       stub = harness.stubs['m1']!;
       stub.on['workspace.create'] = (params) {
@@ -250,15 +240,9 @@ void main() {
 
     test('types exactly one line claude attach with quotes, no extra commands', () async {
       const sessionId = '12345678-1234-1234-1234-123456789abc';
-      const session = BackgroundSession(
-        sessionId: sessionId,
-        cwd: '/work/project',
-      );
+      const session = BackgroundSession(sessionId: sessionId, cwd: '/work/project');
 
-      final paneAgent = await attachBackgroundSession(
-        machine: machine,
-        session: session,
-      );
+      final paneAgent = await attachBackgroundSession(machine: machine, session: session);
 
       expect(paneAgent.machineId, 'm1');
       expect(paneAgent.paneId, isNotEmpty);
@@ -277,15 +261,9 @@ void main() {
 
     test('adversarial sessionId with quotes is safely shell-quoted and cannot inject', () async {
       const evilId = "test'; rm -rf /; echo 'pwned";
-      const session = BackgroundSession(
-        sessionId: evilId,
-        cwd: '/work/project',
-      );
+      const session = BackgroundSession(sessionId: evilId, cwd: '/work/project');
 
-      await attachBackgroundSession(
-        machine: machine,
-        session: session,
-      );
+      await attachBackgroundSession(machine: machine, session: session);
 
       final sentInputs = stub.paramsOf('pane.send_input');
       expect(sentInputs, hasLength(1));

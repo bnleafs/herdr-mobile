@@ -12,9 +12,7 @@ import '../../render/markdown/markdown.dart';
 import 'code_panel.dart';
 import 'content_blocks.dart';
 import 'content_copy.dart';
-import 'transcript_plan.dart' show segmentsOf;
 import '../../render/visible_text.dart';
-import '../../../fork/message_actions/message_action_bar.dart';
 import '../../../fork/message_actions/message_action_sheet.dart' show TranscriptSessionScope, showMessageActionSheet;
 
 /// Called with the row key each time a transcript row's `build` runs. Tests
@@ -183,32 +181,7 @@ class AgentTextRow extends StatelessWidget {
       ),
     );
     final copy = message;
-    final session = TranscriptSessionScope.of(context);
-    final isLastBlock =
-        copy != null &&
-        session != null &&
-        !quiet &&
-        () {
-          final segments = segmentsOf(copy);
-          if (segments.isEmpty) return true;
-          return rowKey.endsWith('#${segments.length - 1}') || !rowKey.contains('#');
-        }();
-
-    Widget content = markdown;
-    if (copy != null) {
-      content = MessageCopyTarget(message: copy, child: markdown);
-      if (isLastBlock) {
-        content = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            content,
-            MessageActionBar(session: session, message: copy),
-          ],
-        );
-      }
-    }
-    return _gap(gap, content);
+    return _gap(gap, copy == null ? markdown : MessageCopyTarget(message: copy, child: markdown));
   }
 }
 

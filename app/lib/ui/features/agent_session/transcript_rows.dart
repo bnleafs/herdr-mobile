@@ -15,8 +15,7 @@ import 'content_copy.dart';
 import 'transcript_plan.dart' show segmentsOf;
 import '../../render/visible_text.dart';
 import '../../../fork/message_actions/message_action_bar.dart';
-import '../../../fork/message_actions/message_action_sheet.dart'
-    show TranscriptSessionScope, showMessageActionSheet;
+import '../../../fork/message_actions/message_action_sheet.dart' show TranscriptSessionScope, showMessageActionSheet;
 
 /// Called with the row key each time a transcript row's `build` runs. Tests
 /// use it to prove a streaming answer rebuilds only the rows that changed.
@@ -121,31 +120,19 @@ class UserRow extends StatelessWidget {
 }
 
 class _UserRowKebab extends StatelessWidget {
-  const _UserRowKebab({
-    required this.session,
-    required this.message,
-  });
+  const _UserRowKebab({required this.session, required this.message});
 
   final AgentSessionView session;
   final TranscriptMessage message;
 
   @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-
-    return Semantics(
-      button: true,
-      label: 'Message actions',
-      child: InkWell(
-        onTap: () => showMessageActionSheet(context, session: session, message: message),
-        borderRadius: BorderRadius.circular(Radii.sm),
-        child: Padding(
-          padding: const EdgeInsets.all(Gap.hair),
-          child: Icon(LucideIcons.ellipsis, size: 14, color: ds.textSecondary),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CircleButton(
+    icon: LucideIcons.ellipsis,
+    tooltip: 'Message actions',
+    size: CircleButton.compact,
+    filled: false,
+    onPressed: () => showMessageActionSheet(context, session: session, message: message),
+  );
 }
 
 /// One block of the agent's answer, as Markdown ([MdBlockView]). Whether a
@@ -197,11 +184,15 @@ class AgentTextRow extends StatelessWidget {
     );
     final copy = message;
     final session = TranscriptSessionScope.of(context);
-    final isLastBlock = copy != null && session != null && !quiet && () {
-      final segments = segmentsOf(copy);
-      if (segments.isEmpty) return true;
-      return rowKey.endsWith('#${segments.length - 1}') || !rowKey.contains('#');
-    }();
+    final isLastBlock =
+        copy != null &&
+        session != null &&
+        !quiet &&
+        () {
+          final segments = segmentsOf(copy);
+          if (segments.isEmpty) return true;
+          return rowKey.endsWith('#${segments.length - 1}') || !rowKey.contains('#');
+        }();
 
     Widget content = markdown;
     if (copy != null) {

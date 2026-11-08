@@ -4,6 +4,19 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.61] - 2026-11-08
+
+### Model Bar: native quick-access model sheet with live sync (F18)
+
+- **Native Model Bar sheet**: flat searchable list of every model from cc-gateway
+  `/v1/models/ready` accessible from Settings ▸ Model Bar.
+- **Star toggle**: toggle quick-access (pinned) state with immediate optimistic
+  UI feedback and round-trip live sync with `/v1/model-bar` on the Mac.
+- **Adversarial rollback**: on network or validation failure, immediately reverts
+  star state and displays a non-intrusive inline error without freezing or crashing.
+- **Fallback resilience**: falls back to direct `~/.config/effortless/model-bar.json`
+  reads/writes with client-side schema validation if the loopback exec channel is unreachable.
+
 ## [0.1.61] - 2026-11-06
 
 ### Aside: ignore thinking spinner frames and accurate completion detection

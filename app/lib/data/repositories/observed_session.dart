@@ -23,6 +23,8 @@ import '../observed/observed_contracts.dart';
 import '../observed/observed_kind.dart';
 import '../observed/omp_ask_driver.dart' show AskDone, AskMismatch, AskSend;
 import '../observed/session_log_locator.dart';
+import '../observed/claude_log_mapper.dart' show ClaudeLogMapper;
+import '../../fork/session_controls/desk_native_config.dart';
 import '../../fork/telemetry/envelope.dart';
 import '../../fork/telemetry/telemetry.dart';
 import '../services/herdr_transport.dart' show HerdrApiException, HerdrTransportException;
@@ -154,7 +156,12 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
        _mapper = mapper(),
        _log = AgentSessionState(subagentName == null ? 'pane/$paneId' : 'sub/$paneId/$subagentName') {
     _phaseSince = DateTime.now();
+    if (kind.id == 'claude' && parent == null) {
+      _configAdapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId)..load();
+    }
   }
+
+  DeskNativeConfigAdapter? _configAdapter;
 
   @override
   final MachineConnection machine;
@@ -414,6 +421,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
 
   AgentSessionState _compose() {
     var s = _log;
+    final config = _configAdapter;
+    if (config != null) s = s.withConfigOptions(config.options);
     if (phase == AgentPhase.working) s = s.withTurnStarted();
     if (_pending case final p?) s = s.withPending(p);
     return s;
@@ -1499,10 +1508,18 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
         log = log.apply(u);
       }
       _wideLog = log;
+      if (mapper case ClaudeLogMapper m) {
+        final model = m.currentModel;
+        if (model != null) _configAdapter?.onObservedModel(model);
+      }
       return;
     }
     for (final u in _mapper.map(line)) {
       _log = _log.apply(u);
+    }
+    if (_mapper case ClaudeLogMapper m) {
+      final model = m.currentModel;
+      if (model != null) _configAdapter?.onObservedModel(model);
     }
   }
 
@@ -2192,8 +2209,16 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
   Future<void> setMode(String modeId) async => _setProblem('This agent runs in a terminal; change it there.');
 
   @override
-  Future<void> setConfigOption(String configId, Object value) async =>
-      _setProblem('This agent runs in a terminal; change it there.');
+  Future<void> setConfigOption(String configId, Object value) async {
+    final adapter = _configAdapter;
+    if (adapter != null) {
+      await adapter.setConfigOption(configId, value);
+      _composed = null;
+      notifyListeners();
+      return;
+    }
+    _setProblem('This agent runs in a terminal; change it there.');
+  }
 
   @override
   Future<void> end() => throw const AgentHostException('An agent that runs in a terminal is ended in the terminal.');

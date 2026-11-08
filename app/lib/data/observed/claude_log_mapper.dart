@@ -79,6 +79,10 @@ class ClaudeLogMapper implements SessionLogMapper {
   /// Subagents by call id, in the order they started.
   final _subagents = <String, SubagentInfo>{};
 
+  /// The model last reported by an assistant turn.
+  String? _currentModel;
+  String? get currentModel => _currentModel;
+
   /// Background tasks by [BackgroundTask.key], in the order they started.
   final _tasks = <String, BackgroundTask>{};
   List<BackgroundTask>? _taskView;
@@ -297,6 +301,10 @@ class ClaudeLogMapper implements SessionLogMapper {
     final m = e['message'];
     if (m is! Map<String, dynamic>) return const [];
     final content = m['content'];
+    final model = m['model'];
+    if (model is String && model != '<synthetic>' && model.isNotEmpty) {
+      _currentModel = model;
+    }
     if (m['model'] == '<synthetic>') {
       if (e['isApiErrorMessage'] != true) return const [];
       final text = _textOf(content);

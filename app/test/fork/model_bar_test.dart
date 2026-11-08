@@ -38,11 +38,7 @@ void main() {
     });
 
     test('handles missing optional fields and identical alias', () {
-      final json = {
-        'id': 'haiku',
-        'alias': 'haiku',
-        'ready': false,
-      };
+      final json = {'id': 'haiku', 'alias': 'haiku', 'ready': false};
 
       final model = ReadyModel.fromJson(json);
       expect(model.id, 'haiku');
@@ -70,10 +66,7 @@ void main() {
     });
 
     test('serializes to exact JSON structure', () {
-      const config = ModelBarConfig(
-        pinned: ['argon'],
-        more: ['flash', 'codex'],
-      );
+      const config = ModelBarConfig(pinned: ['argon'], more: ['flash', 'codex']);
 
       expect(config.toJson(), {
         'pinned': ['argon'],
@@ -82,10 +75,7 @@ void main() {
     });
 
     test('withToggled flips pinned state deterministically', () {
-      const initial = ModelBarConfig(
-        pinned: ['argon'],
-        more: ['flash'],
-      );
+      const initial = ModelBarConfig(pinned: ['argon'], more: ['flash']);
 
       // Star 'flash' -> becomes pinned, removed from more
       final starred = initial.withToggled('flash');
@@ -120,25 +110,30 @@ void main() {
 
       expect(
         () => validateModelBarJson(invalid),
-        throwsA(isA<FormatException>().having(
-          (e) => e.message,
-          'message',
-          contains("unknown field 'unexpected' is not permitted"),
-        )),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains("unknown field 'unexpected' is not permitted"),
+          ),
+        ),
       );
     });
 
     test('rejects missing or non-string array fields', () {
+      expect(() => validateModelBarJson({'pinned': 'not an array', 'more': []}), throwsA(isA<FormatException>()));
       expect(
-        () => validateModelBarJson({'pinned': 'not an array', 'more': []}),
+        () => validateModelBarJson({
+          'pinned': [],
+          'more': [123],
+        }),
         throwsA(isA<FormatException>()),
       );
       expect(
-        () => validateModelBarJson({'pinned': [], 'more': [123]}),
-        throwsA(isA<FormatException>()),
-      );
-      expect(
-        () => validateModelBarJson({'pinned': ['  '], 'more': []}),
+        () => validateModelBarJson({
+          'pinned': ['  '],
+          'more': [],
+        }),
         throwsA(isA<FormatException>()),
       );
     });
@@ -162,15 +157,18 @@ void main() {
     test('fetchReadyModels executes curl and parses models list', () async {
       transport.onExec = (cmd) async {
         expect(cmd, contains('/v1/models/ready'));
-        return FakeExecChannel.run(stdout: [
-          jsonEncode({
-            'object': 'readiness_list',
-            'models': [
-              {'id': 'argon', 'alias': 'gemini-4-argon', 'ready': true},
-              {'id': 'flash', 'alias': 'gemini-flash', 'ready': true},
-            ],
-          }),
-        ], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({
+              'object': 'readiness_list',
+              'models': [
+                {'id': 'argon', 'alias': 'gemini-4-argon', 'ready': true},
+                {'id': 'flash', 'alias': 'gemini-flash', 'ready': true},
+              ],
+            }),
+          ],
+          code: 0,
+        );
       };
 
       final models = await client.fetchReadyModels(machine);
@@ -182,12 +180,15 @@ void main() {
     test('fetchConfig executes curl and parses ModelBarConfig', () async {
       transport.onExec = (cmd) async {
         expect(cmd, contains('/v1/model-bar'));
-        return FakeExecChannel.run(stdout: [
-          jsonEncode({
-            'pinned': ['argon'],
-            'more': ['flash'],
-          }),
-        ], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({
+              'pinned': ['argon'],
+              'more': ['flash'],
+            }),
+          ],
+          code: 0,
+        );
       };
 
       final config = await client.fetchConfig(machine);
@@ -199,34 +200,34 @@ void main() {
       transport.onExec = (cmd) async {
         expect(cmd, contains('PUT'));
         expect(cmd, contains('/v1/model-bar'));
-        return FakeExecChannel.run(stdout: [
-          jsonEncode({
-            'ok': true,
-            'pinned': ['argon', 'codex'],
-            'more': [],
-          }),
-        ], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({
+              'ok': true,
+              'pinned': ['argon', 'codex'],
+              'more': [],
+            }),
+          ],
+          code: 0,
+        );
       };
 
-      final saved = await client.saveConfig(
-        machine,
-        const ModelBarConfig(pinned: ['argon', 'codex'], more: []),
-      );
+      final saved = await client.saveConfig(machine, const ModelBarConfig(pinned: ['argon', 'codex'], more: []));
       expect(saved.pinned, ['argon', 'codex']);
     });
 
     test('saveConfig throws ModelBarException when server rejects or curl fails', () async {
       transport.onExec = (cmd) async {
-        return FakeExecChannel.run(stdout: [
-          jsonEncode({'error': 'validation_error', 'reason': 'unknown field'}),
-        ], code: 1);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({'error': 'validation_error', 'reason': 'unknown field'}),
+          ],
+          code: 1,
+        );
       };
 
       expect(
-        () => client.saveConfig(
-          machine,
-          const ModelBarConfig(pinned: ['invalid'], more: []),
-        ),
+        () => client.saveConfig(machine, const ModelBarConfig(pinned: ['invalid'], more: [])),
         throwsA(isA<ModelBarException>()),
       );
     });
@@ -237,10 +238,16 @@ void main() {
       // FS provides file
       final fs = FakeFs(home: '/home/u1');
       transport.fs = fs;
-      fs.nodes['/home/u1/.config/effortless/model-bar.json'] = FakeNode.file(Uint8List.fromList(utf8.encode(jsonEncode({
-        'pinned': ['fallback-model'],
-        'more': <String>[],
-      }))));
+      fs.nodes['/home/u1/.config/effortless/model-bar.json'] = FakeNode.file(
+        Uint8List.fromList(
+          utf8.encode(
+            jsonEncode({
+              'pinned': ['fallback-model'],
+              'more': <String>[],
+            }),
+          ),
+        ),
+      );
 
       final config = await client.fetchConfig(machine);
       expect(config.pinned, ['fallback-model']);

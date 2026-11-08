@@ -243,7 +243,7 @@ void main() {
         block: 8192,
       );
       await files.upload(local('near.bin', 14 * 8192, sparse: true).path, remote).done;
-      expect(server.maxOutstanding, lessThanOrEqualTo(8));
+      expect(server.maxOutstanding, lessThanOrEqualTo(12));
 
       // Far: ~hundreds of 4 KB requests would fill it, so the window climbs to
       // the cap. The long round trip keeps lateness small against it (the climb

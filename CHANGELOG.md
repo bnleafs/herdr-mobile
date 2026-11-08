@@ -4,7 +4,7 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
-## [0.1.61] - 2026-11-08
+## [0.1.62] - 2026-11-08
 
 ### Model Bar: native quick-access model sheet with live sync (F18)
 

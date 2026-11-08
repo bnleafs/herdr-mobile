@@ -30,34 +30,40 @@ void main() {
   });
 
   Widget pumpModelBarSheet({ModelBarClient? client}) => MaterialApp(
-        theme: AppTheme.light(),
-        home: Scaffold(
-          body: ModelBarSheet(
-            machine: machine,
-            client: client ?? const ModelBarClient(),
-          ),
-        ),
-      );
+    theme: AppTheme.light(),
+    home: Scaffold(
+      body: ModelBarSheet(machine: machine, client: client ?? const ModelBarClient()),
+    ),
+  );
 
   group('ModelBarSheet UI', () {
     testWidgets('renders model list and filters in place with search', (tester) async {
       transport.onExec = (cmd) async {
         if (cmd.contains('/v1/models/ready')) {
-          return FakeExecChannel.run(stdout: [
-            jsonEncode({
-              'object': 'readiness_list',
-              'models': [
-                {'id': 'argon', 'alias': 'gemini-4-argon', 'ready': true},
-                {'id': 'flash', 'alias': 'gemini-flash', 'ready': true},
-                {'id': 'codex', 'alias': 'gpt-6.1-sol', 'ready': false},
-              ],
-            }),
-          ], code: 0);
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({
+                'object': 'readiness_list',
+                'models': [
+                  {'id': 'argon', 'alias': 'gemini-4-argon', 'ready': true},
+                  {'id': 'flash', 'alias': 'gemini-flash', 'ready': true},
+                  {'id': 'codex', 'alias': 'gpt-6.1-sol', 'ready': false},
+                ],
+              }),
+            ],
+            code: 0,
+          );
         }
         if (cmd.contains('/v1/model-bar')) {
-          return FakeExecChannel.run(stdout: [
-            jsonEncode({'pinned': ['argon'], 'more': ['flash', 'codex']}),
-          ], code: 0);
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({
+                'pinned': ['argon'],
+                'more': ['flash', 'codex'],
+              }),
+            ],
+            code: 0,
+          );
         }
         return FakeExecChannel.run(code: 1);
       };
@@ -91,15 +97,23 @@ void main() {
     testWidgets('shows no models match message on empty filter result', (tester) async {
       transport.onExec = (cmd) async {
         if (cmd.contains('/v1/models/ready')) {
-          return FakeExecChannel.run(stdout: [
-            jsonEncode({
-              'models': [
-                {'id': 'argon', 'ready': true},
-              ],
-            }),
-          ], code: 0);
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({
+                'models': [
+                  {'id': 'argon', 'ready': true},
+                ],
+              }),
+            ],
+            code: 0,
+          );
         }
-        return FakeExecChannel.run(stdout: [jsonEncode({'pinned': [], 'more': []})], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({'pinned': [], 'more': []}),
+          ],
+          code: 0,
+        );
       };
 
       await tester.pumpWidget(pumpModelBarSheet());
@@ -119,25 +133,40 @@ void main() {
           putCompleter = Completer<void>();
           final ch = FakeExecChannel();
           ch.onInputClosed = () {
-            ch.emit(jsonEncode({'ok': true, 'pinned': ['argon', 'flash'], 'more': []}));
+            ch.emit(
+              jsonEncode({
+                'ok': true,
+                'pinned': ['argon', 'flash'],
+                'more': [],
+              }),
+            );
             ch.exit(0);
             if (!putCompleter!.isCompleted) putCompleter!.complete();
           };
           return ch;
         }
         if (cmd.contains('/v1/models/ready')) {
-          return FakeExecChannel.run(stdout: [
-            jsonEncode({
-              'models': [
-                {'id': 'argon', 'ready': true},
-                {'id': 'flash', 'ready': true},
-              ],
-            }),
-          ], code: 0);
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({
+                'models': [
+                  {'id': 'argon', 'ready': true},
+                  {'id': 'flash', 'ready': true},
+                ],
+              }),
+            ],
+            code: 0,
+          );
         }
-        return FakeExecChannel.run(stdout: [
-          jsonEncode({'pinned': ['argon'], 'more': ['flash']}),
-        ], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({
+              'pinned': ['argon'],
+              'more': ['flash'],
+            }),
+          ],
+          code: 0,
+        );
       };
 
       await tester.pumpWidget(pumpModelBarSheet());
@@ -158,7 +187,9 @@ void main() {
       expect(putCompleter!.isCompleted, isTrue);
     });
 
-    testWidgets('ADVERSARIAL: rolls back optimistic star toggle and displays inline error when PUT fails', (tester) async {
+    testWidgets('ADVERSARIAL: rolls back optimistic star toggle and displays inline error when PUT fails', (
+      tester,
+    ) async {
       var putAttempted = false;
 
       transport.onExec = (cmd) async {
@@ -166,23 +197,34 @@ void main() {
           putAttempted = true;
           // Fail the PUT command
           return FakeExecChannel.run(
-            stdout: [jsonEncode({'error': 'validation_error', 'reason': 'simulated server failure'})],
+            stdout: [
+              jsonEncode({'error': 'validation_error', 'reason': 'simulated server failure'}),
+            ],
             code: 1,
           );
         }
         if (cmd.contains('/v1/models/ready')) {
-          return FakeExecChannel.run(stdout: [
-            jsonEncode({
-              'models': [
-                {'id': 'argon', 'ready': true},
-                {'id': 'flash', 'ready': true},
-              ],
-            }),
-          ], code: 0);
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({
+                'models': [
+                  {'id': 'argon', 'ready': true},
+                  {'id': 'flash', 'ready': true},
+                ],
+              }),
+            ],
+            code: 0,
+          );
         }
-        return FakeExecChannel.run(stdout: [
-          jsonEncode({'pinned': ['argon'], 'more': ['flash']}),
-        ], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({
+              'pinned': ['argon'],
+              'more': ['flash'],
+            }),
+          ],
+          code: 0,
+        );
       };
 
       await tester.pumpWidget(pumpModelBarSheet());
@@ -218,15 +260,23 @@ void main() {
         }
         // Retry succeeds
         if (cmd.contains('/v1/models/ready')) {
-          return FakeExecChannel.run(stdout: [
-            jsonEncode({
-              'models': [
-                {'id': 'argon', 'ready': true},
-              ],
-            }),
-          ], code: 0);
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({
+                'models': [
+                  {'id': 'argon', 'ready': true},
+                ],
+              }),
+            ],
+            code: 0,
+          );
         }
-        return FakeExecChannel.run(stdout: [jsonEncode({'pinned': [], 'more': []})], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({'pinned': [], 'more': []}),
+          ],
+          code: 0,
+        );
       };
 
       await tester.pumpWidget(pumpModelBarSheet());
@@ -245,15 +295,23 @@ void main() {
     testWidgets('ModelBarGroup renders in Settings and opens ModelBarSheet on tap', (tester) async {
       transport.onExec = (cmd) async {
         if (cmd.contains('/v1/models/ready')) {
-          return FakeExecChannel.run(stdout: [
-            jsonEncode({
-              'models': [
-                {'id': 'argon', 'ready': true},
-              ],
-            }),
-          ], code: 0);
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({
+                'models': [
+                  {'id': 'argon', 'ready': true},
+                ],
+              }),
+            ],
+            code: 0,
+          );
         }
-        return FakeExecChannel.run(stdout: [jsonEncode({'pinned': [], 'more': []})], code: 0);
+        return FakeExecChannel.run(
+          stdout: [
+            jsonEncode({'pinned': [], 'more': []}),
+          ],
+          code: 0,
+        );
       };
 
       await tester.pumpWidget(

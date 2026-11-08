@@ -78,39 +78,40 @@ class UserRow extends StatelessWidget {
       gap,
       MessageCopyTarget(
         message: message,
-        child: Panel(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm + Gap.hair),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        child: Stack(
+          children: [
+            Panel(
+              padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm + Gap.hair),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: text.isNotEmpty
-                        ? Text(
-                            text,
-                            maxLines: collapsible && !open ? _collapsedLines : null,
-                            // An ellipsis without a line cap would cut the text to one line.
-                            overflow: collapsible && !open ? TextOverflow.ellipsis : TextOverflow.clip,
-                            style: Type.compact.copyWith(color: ds.text),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  if (session != null) ...[
-                    const SizedBox(width: Gap.xs),
-                    _UserRowKebab(session: session, message: message),
-                  ],
+                  if (text.isNotEmpty)
+                    Padding(
+                      padding: session != null ? const EdgeInsets.only(right: Gap.xl) : EdgeInsets.zero,
+                      child: Text(
+                        text,
+                        maxLines: collapsible && !open ? _collapsedLines : null,
+                        // An ellipsis without a line cap would cut the text to one line.
+                        overflow: collapsible && !open ? TextOverflow.ellipsis : TextOverflow.clip,
+                        style: Type.compact.copyWith(color: ds.text),
+                      ),
+                    ),
+                  for (final block in message.blocks)
+                    if (block is! TextBlock) ...[
+                      const SizedBox(height: Gap.xs),
+                      ContentBlockView(block: block, expanded: all, onToggle: () => onToggle(allKey(rowKey))),
+                    ],
+                  if (collapsible) TextAction(label: open ? 'Show less' : 'Show more', onTap: () => onToggle(rowKey)),
                 ],
               ),
-              for (final block in message.blocks)
-                if (block is! TextBlock) ...[
-                  const SizedBox(height: Gap.xs),
-                  ContentBlockView(block: block, expanded: all, onToggle: () => onToggle(allKey(rowKey))),
-                ],
-              if (collapsible) TextAction(label: open ? 'Show less' : 'Show more', onTap: () => onToggle(rowKey)),
-            ],
-          ),
+            ),
+            if (session != null)
+              Positioned(
+                top: 0,
+                right: Gap.xs,
+                child: _UserRowKebab(session: session, message: message),
+              ),
+          ],
         ),
       ),
     );

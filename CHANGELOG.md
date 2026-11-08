@@ -4,6 +4,26 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.63] - 2026-11-08
+
+### Dynamic Session Chips (F19) and Chat Message Actions (F20)
+
+- **Dynamic Session Chips in Chat View**: Restored dynamic Model, Effort, and Effortless
+  chips directly above the composer for desk-native Claude terminal sessions. Populates
+  the upstream `configOptions` stream and steers Claude Code using native terminal commands
+  (`/model <id>`, `/effort <level>`, and `/effortless <flag>`).
+- **User Message Actions**: Tapping the kebab (•••) action button on any user turn
+  opens a bottom sheet offering:
+  - **Copy text**: Copy user message content to clipboard.
+  - **Edit in composer**: Populate active composer with the user's prompt for editing.
+  - **Undo turn & file changes**: Issues `/undo` up to 3 turns back, with confirmation dialog
+    for multi-turn rewinds.
+  - **Retry turn**: Reverts file modifications via `/undo` and re-submits the prompt.
+- **Agent Response Actions**: Settled assistant messages display an inline action bar with:
+  - **Copy**: One-tap plain text copy with kit toast feedback.
+  - **Retry**: Immediately available on the latest assistant response.
+  - **More actions**: Opens bottom sheet with **Copy as Markdown** and full turn options.
+
 ## [0.1.62] - 2026-11-08
 
 ### Model Bar: native quick-access model sheet with live sync (F18)

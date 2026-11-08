@@ -1,5 +1,17 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/models/machine_profile.dart';
+import 'package:herdr_mobile/data/repositories/machine_connection.dart';
+import 'package:herdr_mobile/data/services/herdr_api.dart';
+import 'package:herdr_mobile/data/services/herdr_transport.dart';
+import 'package:herdr_mobile/fork/model_bar/model_bar_client.dart';
 import 'package:herdr_mobile/fork/model_bar/model_bar_models.dart';
+
+import '../support/fake_exec.dart';
+import '../support/fake_fs.dart';
+import '../support/fake_transport.dart';
 
 void main() {
   group('ReadyModel', () {
@@ -129,6 +141,119 @@ void main() {
         () => validateModelBarJson({'pinned': ['  '], 'more': []}),
         throwsA(isA<FormatException>()),
       );
+    });
+  });
+
+  group('ModelBarClient', () {
+    late FakeTransport transport;
+    late MachineConnection machine;
+    late ModelBarClient client;
+
+    setUp(() {
+      transport = FakeTransport();
+      machine = MachineConnection(
+        profile: const MachineProfile(id: 'm1', label: 'box1', host: 'h1', username: 'u1'),
+        api: HerdrApi(transport, machineId: 'm1'),
+        backoff: (_) => const Duration(hours: 1),
+      );
+      client = const ModelBarClient();
+    });
+
+    test('fetchReadyModels executes curl and parses models list', () async {
+      transport.onExec = (cmd) async {
+        expect(cmd, contains('/v1/models/ready'));
+        return FakeExecChannel.run(stdout: [
+          jsonEncode({
+            'object': 'readiness_list',
+            'models': [
+              {'id': 'argon', 'alias': 'gemini-4-argon', 'ready': true},
+              {'id': 'flash', 'alias': 'gemini-flash', 'ready': true},
+            ],
+          }),
+        ], code: 0);
+      };
+
+      final models = await client.fetchReadyModels(machine);
+      expect(models.length, 2);
+      expect(models[0].id, 'argon');
+      expect(models[1].id, 'flash');
+    });
+
+    test('fetchConfig executes curl and parses ModelBarConfig', () async {
+      transport.onExec = (cmd) async {
+        expect(cmd, contains('/v1/model-bar'));
+        return FakeExecChannel.run(stdout: [
+          jsonEncode({
+            'pinned': ['argon'],
+            'more': ['flash'],
+          }),
+        ], code: 0);
+      };
+
+      final config = await client.fetchConfig(machine);
+      expect(config.pinned, ['argon']);
+      expect(config.more, ['flash']);
+    });
+
+    test('saveConfig executes PUT curl and validates server return', () async {
+      transport.onExec = (cmd) async {
+        expect(cmd, contains('PUT'));
+        expect(cmd, contains('/v1/model-bar'));
+        return FakeExecChannel.run(stdout: [
+          jsonEncode({
+            'ok': true,
+            'pinned': ['argon', 'codex'],
+            'more': [],
+          }),
+        ], code: 0);
+      };
+
+      final saved = await client.saveConfig(
+        machine,
+        const ModelBarConfig(pinned: ['argon', 'codex'], more: []),
+      );
+      expect(saved.pinned, ['argon', 'codex']);
+    });
+
+    test('saveConfig throws ModelBarException when server rejects or curl fails', () async {
+      transport.onExec = (cmd) async {
+        return FakeExecChannel.run(stdout: [
+          jsonEncode({'error': 'validation_error', 'reason': 'unknown field'}),
+        ], code: 1);
+      };
+
+      expect(
+        () => client.saveConfig(
+          machine,
+          const ModelBarConfig(pinned: ['invalid'], more: []),
+        ),
+        throwsA(isA<ModelBarException>()),
+      );
+    });
+
+    test('fetchConfig falls back to reading ~/.config/effortless/model-bar.json when exec fails', () async {
+      // openExec fails
+      transport.onExec = (cmd) => Future.error(const HerdrTransportException('exec failed'));
+      // FS provides file
+      final fs = FakeFs(home: '/home/u1');
+      transport.fs = fs;
+      fs.nodes['/home/u1/.config/effortless/model-bar.json'] = FakeNode.file(Uint8List.fromList(utf8.encode(jsonEncode({
+        'pinned': ['fallback-model'],
+        'more': <String>[],
+      }))));
+
+      final config = await client.fetchConfig(machine);
+      expect(config.pinned, ['fallback-model']);
+    });
+
+    test('fetchConfig fallback returns empty config when file does not exist', () async {
+      transport.onExec = (cmd) => Future.error(const HerdrTransportException('exec failed'));
+      final fs = FakeFs(home: '/home/u1');
+      transport.fs = fs;
+
+      final config = await client.fetchConfig(machine);
+      expect(config.pinned, isEmpty);
+      expect(config.more, isEmpty);
     });
   });
 }

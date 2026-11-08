@@ -26,35 +26,32 @@ class ReadyModel {
   bool get hasDistinctAlias => alias != null && alias!.isNotEmpty && alias != id;
 
   factory ReadyModel.fromJson(Map<String, dynamic> json) => ReadyModel(
-        id: json['id'] as String? ?? '',
-        alias: json['alias'] as String?,
-        provider: json['provider'] as String?,
-        upstream: json['upstream'] as String?,
-        tier: json['tier'] as String?,
-        configuredInUpstream: json['configuredInUpstream'] == true,
-        inCooldown: json['inCooldown'] == true,
-        ready: json['ready'] != false,
-      );
+    id: json['id'] as String? ?? '',
+    alias: json['alias'] as String?,
+    provider: json['provider'] as String?,
+    upstream: json['upstream'] as String?,
+    tier: json['tier'] as String?,
+    configuredInUpstream: json['configuredInUpstream'] == true,
+    inCooldown: json['inCooldown'] == true,
+    ready: json['ready'] != false,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        if (alias != null) 'alias': alias,
-        if (provider != null) 'provider': provider,
-        if (upstream != null) 'upstream': upstream,
-        if (tier != null) 'tier': tier,
-        'configuredInUpstream': configuredInUpstream,
-        'inCooldown': inCooldown,
-        'ready': ready,
-      };
+    'id': id,
+    if (alias != null) 'alias': alias,
+    if (provider != null) 'provider': provider,
+    if (upstream != null) 'upstream': upstream,
+    if (tier != null) 'tier': tier,
+    'configuredInUpstream': configuredInUpstream,
+    'inCooldown': inCooldown,
+    'ready': ready,
+  };
 }
 
 /// Represents the shared quick-access model bar configuration (`~/.config/effortless/model-bar.json`).
 @immutable
 class ModelBarConfig {
-  const ModelBarConfig({
-    this.pinned = const [],
-    this.more = const [],
-  });
+  const ModelBarConfig({this.pinned = const [], this.more = const []});
 
   final List<String> pinned;
   final List<String> more;
@@ -78,16 +75,10 @@ class ModelBarConfig {
 
   factory ModelBarConfig.fromJson(Map<String, dynamic> json) {
     validateModelBarJson(json);
-    return ModelBarConfig(
-      pinned: (json['pinned'] as List).cast<String>(),
-      more: (json['more'] as List).cast<String>(),
-    );
+    return ModelBarConfig(pinned: (json['pinned'] as List).cast<String>(), more: (json['more'] as List).cast<String>());
   }
 
-  Map<String, dynamic> toJson() => {
-        'pinned': pinned,
-        'more': more,
-      };
+  Map<String, dynamic> toJson() => {'pinned': pinned, 'more': more};
 }
 
 /// Validates that [json] adheres to the server contract:

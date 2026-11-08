@@ -57,19 +57,12 @@ Future<void> showModelBarSheet(
 }) async {
   await showAppSheet<void>(
     context,
-    builder: (ctx) => ModelBarSheet(
-      machine: machine,
-      client: client ?? const ModelBarClient(),
-    ),
+    builder: (ctx) => ModelBarSheet(machine: machine, client: client ?? const ModelBarClient()),
   );
 }
 
 class ModelBarSheet extends StatefulWidget {
-  const ModelBarSheet({
-    super.key,
-    required this.machine,
-    this.client = const ModelBarClient(),
-  });
+  const ModelBarSheet({super.key, required this.machine, this.client = const ModelBarClient()});
 
   final MachineConnection machine;
   final ModelBarClient client;
@@ -179,9 +172,7 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
 
     return Container(
       color: ds.bg,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -193,45 +184,31 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    'Model Bar',
-                    style: Type.title.copyWith(color: ds.text),
-                  ),
+                  child: Text('Model Bar', style: Type.title.copyWith(color: ds.text)),
                 ),
-                if (_loading)
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                if (_loading) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.xs),
-            child: SearchField(
-              controller: _searchController,
-              hint: 'Search models...',
-            ),
+            child: SearchField(controller: _searchController, hint: 'Search models...'),
           ),
           if (_actionError != null)
             Container(
               margin: const EdgeInsets.fromLTRB(Gap.md, Gap.xs, Gap.md, Gap.xs),
               padding: const EdgeInsets.all(Gap.sm),
               decoration: BoxDecoration(
-                color: ds.blocked.withOpacity(0.12),
+                color: ds.blocked.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(Radii.md),
-                border: Border.all(color: ds.blocked.withOpacity(0.3)),
+                border: Border.all(color: ds.blocked.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
                   Icon(LucideIcons.alertCircle, size: 16, color: ds.blocked),
                   const SizedBox(width: Gap.sm),
                   Expanded(
-                    child: Text(
-                      _actionError!,
-                      style: Type.body.copyWith(color: ds.blocked, fontSize: 13),
-                    ),
+                    child: Text(_actionError!, style: Type.body.copyWith(color: ds.blocked, fontSize: 13)),
                   ),
                   IconButton(
                     icon: Icon(LucideIcons.x, size: 14, color: ds.blocked),
@@ -243,9 +220,7 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
               ),
             ),
           const Divider(height: 1),
-          Flexible(
-            child: _buildBody(ds, activeConfig, filtered),
-          ),
+          Flexible(child: _buildBody(ds, activeConfig, filtered)),
         ],
       ),
     );
@@ -254,10 +229,7 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
   Widget _buildBody(Ds ds, ModelBarConfig activeConfig, List<ReadyModel> filtered) {
     if (_loading && _models.isEmpty) {
       return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(Gap.xl),
-          child: CircularProgressIndicator(),
-        ),
+        child: Padding(padding: EdgeInsets.all(Gap.xl), child: CircularProgressIndicator()),
       );
     }
 
@@ -274,10 +246,7 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: Gap.md),
-              OutlinedButton(
-                onPressed: _load,
-                child: const Text('Retry'),
-              ),
+              OutlinedButton(onPressed: _load, child: const Text('Retry')),
             ],
           ),
         ),
@@ -288,10 +257,7 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(Gap.xl),
-          child: Text(
-            'No models match',
-            style: Type.body.copyWith(color: ds.textSecondary),
-          ),
+          child: Text('No models match', style: Type.body.copyWith(color: ds.textSecondary)),
         ),
       );
     }
@@ -299,7 +265,7 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
     return ListView.separated(
       shrinkWrap: true,
       itemCount: filtered.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final model = filtered[index];
         final isPinned = activeConfig.isPinned(model.id);
@@ -309,27 +275,14 @@ class _ModelBarSheetState extends State<ModelBarSheet> {
           leading: Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: model.ready ? ds.done : ds.faint,
-            ),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: model.ready ? ds.done : ds.faint),
           ),
-          title: Text(
-            model.id,
-            style: Type.bodyStrong.copyWith(color: ds.text),
-          ),
+          title: Text(model.id, style: Type.bodyStrong.copyWith(color: ds.text)),
           subtitle: model.hasDistinctAlias
-              ? Text(
-                  model.alias!,
-                  style: Type.body.copyWith(color: ds.textSecondary, fontSize: 12),
-                )
+              ? Text(model.alias!, style: Type.body.copyWith(color: ds.textSecondary, fontSize: 12))
               : null,
           trailing: IconButton(
-            icon: Icon(
-              LucideIcons.star,
-              color: isPinned ? ds.accent : ds.textSecondary,
-              fill: isPinned ? 1.0 : 0.0,
-            ),
+            icon: Icon(LucideIcons.star, color: isPinned ? ds.accent : ds.textSecondary, fill: isPinned ? 1.0 : 0.0),
             tooltip: isPinned ? 'Unstar model' : 'Star model',
             onPressed: () => _toggleStar(model.id),
           ),

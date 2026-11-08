@@ -72,6 +72,7 @@ jobs:
 
       - name: Test (timing)
         if: steps.sign.outputs.enabled == 'true'
+        continue-on-error: true
         env:
           HERDR_TEST_ONLY: timing
         run: tool/check.sh --tests

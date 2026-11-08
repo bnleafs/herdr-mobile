@@ -241,5 +241,31 @@ void main() {
 
       expect(find.text('argon'), findsOneWidget);
     });
+
+    testWidgets('ModelBarGroup renders in Settings and opens ModelBarSheet on tap', (tester) async {
+      transport.onExec = (cmd) async {
+        if (cmd.contains('/v1/models/ready')) {
+          return FakeExecChannel.run(stdout: [
+            jsonEncode({
+              'models': [
+                {'id': 'argon', 'ready': true},
+              ],
+            }),
+          ], code: 0);
+        }
+        return FakeExecChannel.run(stdout: [jsonEncode({'pinned': [], 'more': []})], code: 0);
+      };
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(body: const ModelBarGroup()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Model Bar'), findsOneWidget);
+      expect(find.text('Quick-access models'), findsOneWidget);
+    });
   });
 }

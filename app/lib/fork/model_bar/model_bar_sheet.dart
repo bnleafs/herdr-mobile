@@ -1,12 +1,53 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:herdr_mobile/data/repositories/fleet_repository.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
+import 'package:herdr_mobile/ui/features/settings/settings_group.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:provider/provider.dart';
 
 import 'model_bar_client.dart';
 import 'model_bar_models.dart';
+
+/// One row in Settings to open the native Model Bar sheet.
+class ModelBarGroup extends StatelessWidget {
+  const ModelBarGroup({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Hairline(indent: ListRow.textIndent()),
+        SettingsGroup(
+          icon: LucideIcons.star,
+          title: 'Model Bar',
+          summary: 'Quick-access models',
+          open: false,
+          onToggle: () {
+            final fleet = Provider.of<FleetRepository?>(context, listen: false);
+            final machine = _findMachine(fleet);
+            if (machine != null) {
+              unawaited(showModelBarSheet(context, machine: machine));
+            }
+          },
+          divider: false,
+          rows: const [],
+        ),
+      ],
+    );
+  }
+
+  static MachineConnection? _findMachine(FleetRepository? fleet) {
+    if (fleet == null) return null;
+    for (final c in fleet.connections) {
+      if (c.isLive) return c;
+    }
+    return fleet.connections.isNotEmpty ? fleet.connections.first : null;
+  }
+}
 
 /// Opens the native Model Bar sheet for [machine].
 Future<void> showModelBarSheet(

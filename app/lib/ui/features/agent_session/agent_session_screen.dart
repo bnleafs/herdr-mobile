@@ -30,6 +30,7 @@ import '../../../fork/telemetry/telemetry.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../../../fork/aside/aside_sheet.dart' show showAsideSheet;
+import '../../../fork/message_actions/message_action_sheet.dart' show ComposerDraftScope;
 
 import '../../../data/repositories/fleet_repository.dart';
 import '../../../data/repositories/terminal_settings.dart';
@@ -691,34 +692,41 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
   Widget build(BuildContext context) {
     notifyRegionBuilt('screen');
     final ds = context.ds;
-    return Scaffold(
-      backgroundColor: ds.bg,
-      body: Column(
-        children: [
-          SessionBar(session: widget.session, agent: widget.agent),
-          _LinkStrip(session: widget.session, agent: widget.agent),
-          Expanded(
-            // Shares are worked out when the area is laid out, not when it is
-            // built: the keyboard changes the area's height every frame of its
-            // animation, and nothing inside may rebuild for that.
-            child: CustomMultiChildLayout(
-              delegate: _SessionLayout(),
-              children: [
-                LayoutId(id: _SessionLayout.plan, child: _plan),
-                LayoutId(
-                  id: _SessionLayout.transcript,
-                  // A code block or a table that scrolls sideways keeps its
-                  // swipe: it is not a step to the next agent.
-                  child: switch (widget.agent) {
-                    final agent? => AgentSwipe(agent: agent, child: _transcript),
-                    null => _transcript,
-                  },
-                ),
-                LayoutId(id: _SessionLayout.bottom, child: _bottom),
-              ],
+    return ComposerDraftScope(
+      setDraft: (text) {
+        _input.text = text;
+        _input.selection = TextSelection.collapsed(offset: text.length);
+        _focus.requestFocus();
+      },
+      child: Scaffold(
+        backgroundColor: ds.bg,
+        body: Column(
+          children: [
+            SessionBar(session: widget.session, agent: widget.agent),
+            _LinkStrip(session: widget.session, agent: widget.agent),
+            Expanded(
+              // Shares are worked out when the area is laid out, not when it is
+              // built: the keyboard changes the area's height every frame of its
+              // animation, and nothing inside may rebuild for that.
+              child: CustomMultiChildLayout(
+                delegate: _SessionLayout(),
+                children: [
+                  LayoutId(id: _SessionLayout.plan, child: _plan),
+                  LayoutId(
+                    id: _SessionLayout.transcript,
+                    // A code block or a table that scrolls sideways keeps its
+                    // swipe: it is not a step to the next agent.
+                    child: switch (widget.agent) {
+                      final agent? => AgentSwipe(agent: agent, child: _transcript),
+                      null => _transcript,
+                    },
+                  ),
+                  LayoutId(id: _SessionLayout.bottom, child: _bottom),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

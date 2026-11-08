@@ -30,6 +30,7 @@ import 'subagent_format.dart' show attentionToolIds;
 import 'transcript_plan.dart';
 import 'transcript_rows.dart';
 import 'work_log_rows.dart';
+import '../../../fork/message_actions/message_action_sheet.dart' show TranscriptSessionScope;
 
 /// Rows in the newer slivers when the view opens, or opens again at the
 /// tail. Past three times this, a view that follows the end starts them over.
@@ -784,9 +785,11 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
             _updateAway();
             return false;
           },
-          child: AgentMdScope(
+          child: TranscriptSessionScope(
             session: widget.session,
-            child: Listener(
+            child: AgentMdScope(
+              session: widget.session,
+              child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: _fingerDown,
               onPointerUp: _fingerUp,
@@ -853,6 +856,7 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
               ),
             ),
           ),
+        ),
         ),
         Positioned(
           right: Gap.md,

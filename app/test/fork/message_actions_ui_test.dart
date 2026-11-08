@@ -4,10 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/prompt_queue.dart';
 import 'package:herdr_mobile/data/acp/session_state.dart';
-import 'package:herdr_mobile/fork/message_actions/message_action_bar.dart';
 import 'package:herdr_mobile/fork/message_actions/message_action_sheet.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
-import 'package:herdr_mobile/ui/render/markdown/markdown.dart';
+import 'package:herdr_mobile/ui/features/agent_session/content_copy.dart';
 import 'package:herdr_mobile/ui/features/agent_session/transcript_rows.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -155,8 +154,8 @@ void main() {
     });
   });
 
-  group('AgentTextRow Message Actions UI', () {
-    testWidgets('renders inline MessageActionBar below settled answer', (tester) async {
+  group('Agent Message Actions UI', () {
+    testWidgets('showMessageCopySheet includes Retry response when latest', (tester) async {
       final userMsg = const TranscriptMessage(key: 'u1', role: MessageRole.user, blocks: [TextBlock('Hello agent')]);
       final agentMsg = const TranscriptMessage(
         key: 'a1',
@@ -169,69 +168,52 @@ void main() {
       await tester.pumpWidget(
         pumpWithScopes(
           activeSession: session,
-          child: AgentTextRow(
-            rowKey: 'a1#0',
-            block: parseMd('I am ready to help you.').blocks.first,
-            gap: 0,
-            expanded: false,
-            message: agentMsg,
-            onToggle: (_) {},
+          child: Builder(
+            builder: (ctx) =>
+                TextButton(onPressed: () => showMessageCopySheet(ctx, agentMsg), child: const Text('Open Sheet')),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // MessageActionBar is present
-      expect(find.byType(MessageActionBar), findsOneWidget);
-      expect(find.byIcon(LucideIcons.copy), findsOneWidget);
-      expect(find.byIcon(LucideIcons.refreshCw), findsOneWidget);
-      expect(find.byIcon(LucideIcons.moreHorizontal), findsOneWidget);
-
-      // Tap copy icon directly on action bar
-      await tester.tap(find.byIcon(LucideIcons.copy));
+      await tester.tap(find.text('Open Sheet'));
       await tester.pumpAndSettle();
 
-      expect(clipboardHistory, contains('I am ready to help you.'));
-
-      // Tap more actions icon to open sheet
-      await tester.tap(find.byIcon(LucideIcons.moreHorizontal));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Assistant Response'), findsOneWidget);
       expect(find.text('Copy text'), findsOneWidget);
       expect(find.text('Copy as Markdown'), findsOneWidget);
-      expect(find.text('Retry turn'), findsOneWidget);
+      expect(find.text('Retry response'), findsOneWidget);
+
+      await tester.tap(find.text('Retry response'));
+      await tester.pumpAndSettle();
+
+      expect(session.sent, contains('Hello agent'));
     });
 
-    testWidgets('older agent message hides retry in inline action bar', (tester) async {
-      final user1 = const TranscriptMessage(key: 'u1', role: MessageRole.user, blocks: [TextBlock('1')]);
-      final agent1 = const TranscriptMessage(key: 'a1', role: MessageRole.agent, blocks: [TextBlock('resp 1')]);
-      final user2 = const TranscriptMessage(key: 'u2', role: MessageRole.user, blocks: [TextBlock('2')]);
-      final agent2 = const TranscriptMessage(key: 'a2', role: MessageRole.agent, blocks: [TextBlock('resp 2')]);
+    testWidgets('showMessageCopySheet omits Retry response for older agent responses', (tester) async {
+      final u1 = const TranscriptMessage(key: 'u1', role: MessageRole.user, blocks: [TextBlock('Turn 1')]);
+      final a1 = const TranscriptMessage(key: 'a1', role: MessageRole.agent, blocks: [TextBlock('Resp 1')]);
+      final u2 = const TranscriptMessage(key: 'u2', role: MessageRole.user, blocks: [TextBlock('Turn 2')]);
+      final a2 = const TranscriptMessage(key: 'a2', role: MessageRole.agent, blocks: [TextBlock('Resp 2')]);
 
-      session = FakeAgentSession(state: AgentSessionState('s1', items: [user1, agent1, user2, agent2]));
+      session = FakeAgentSession(state: AgentSessionState('s1', items: [u1, a1, u2, a2]));
 
-      // Render agent1 (older turn)
       await tester.pumpWidget(
         pumpWithScopes(
           activeSession: session,
-          child: AgentTextRow(
-            rowKey: 'a1#0',
-            block: parseMd('resp 1').blocks.first,
-            gap: 0,
-            expanded: false,
-            message: agent1,
-            onToggle: (_) {},
+          child: Builder(
+            builder: (ctx) =>
+                TextButton(onPressed: () => showMessageCopySheet(ctx, a1), child: const Text('Open Sheet')),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // Older agent response should have copy and more, but NOT retry
-      expect(find.byType(MessageActionBar), findsOneWidget);
-      expect(find.byIcon(LucideIcons.copy), findsOneWidget);
-      expect(find.byIcon(LucideIcons.refreshCw), findsNothing);
-      expect(find.byIcon(LucideIcons.moreHorizontal), findsOneWidget);
+      await tester.tap(find.text('Open Sheet'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Copy text'), findsOneWidget);
+      expect(find.text('Copy as Markdown'), findsOneWidget);
+      expect(find.text('Retry response'), findsNothing);
     });
   });
 }

@@ -8,6 +8,8 @@ import '../../../data/acp/session_state.dart';
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import '../../render/markdown/markdown.dart';
+import '../../../fork/message_actions/message_actions_controller.dart';
+import '../../../fork/message_actions/message_action_sheet.dart' show TranscriptSessionScope;
 
 /// Copying a message (docs/screens/session.md "Copying").
 ///
@@ -97,12 +99,25 @@ class _ContentSelectionAreaState extends State<ContentSelectionArea> {
       // rest behind its overflow, and these are what a transcript needs most
       // (Share and Select all can wait there).
       final after = items.indexWhere((i) => i.type == ContextMenuButtonType.copy) + 1;
+      final session = TranscriptSessionScope.of(context);
+      final canRetry =
+          session != null && const MessageActionsController().capabilitiesOf(message, session: session).canRetry;
       items.insertAll(after, [
         ContextMenuButtonItem(label: 'Copy message', onPressed: () => run((c) => copyMessage(c, message))),
         if (messageHasMarkdown(message))
           ContextMenuButtonItem(
             label: 'Copy as Markdown',
             onPressed: () => run((c) => copyMessageMarkdown(c, message)),
+          ),
+        if (canRetry)
+          ContextMenuButtonItem(
+            label: 'Retry response',
+            onPressed: () {
+              region
+                ..hideToolbar()
+                ..clearSelection();
+              const MessageActionsController().retry(session, message);
+            },
           ),
       ]);
     }
@@ -128,27 +143,41 @@ void copyMessageMarkdown(BuildContext context, TranscriptMessage message) =>
 
 /// The choice `Copy message` offers a screen reader: the text, or the Markdown
 /// source for an answer.
-Future<void> showMessageCopySheet(BuildContext context, TranscriptMessage message) => showActionSheet(
-  context,
-  title: 'Message',
-  actions: [
-    SheetAction(
-      label: 'Copy text',
-      icon: LucideIcons.copy,
-      onTap: () {
-        if (context.mounted) copyMessage(context, message);
-      },
-    ),
-    if (messageHasMarkdown(message))
+Future<void> showMessageCopySheet(BuildContext context, TranscriptMessage message) {
+  final session = TranscriptSessionScope.of(context);
+  final canRetry =
+      session != null && const MessageActionsController().capabilitiesOf(message, session: session).canRetry;
+
+  return showActionSheet(
+    context,
+    title: 'Message',
+    actions: [
       SheetAction(
-        label: 'Copy as Markdown',
-        icon: LucideIcons.fileCode,
+        label: 'Copy text',
+        icon: LucideIcons.copy,
         onTap: () {
-          if (context.mounted) copyMessageMarkdown(context, message);
+          if (context.mounted) copyMessage(context, message);
         },
       ),
-  ],
-);
+      if (messageHasMarkdown(message))
+        SheetAction(
+          label: 'Copy as Markdown',
+          icon: LucideIcons.fileCode,
+          onTap: () {
+            if (context.mounted) copyMessageMarkdown(context, message);
+          },
+        ),
+      if (canRetry)
+        SheetAction(
+          label: 'Retry response',
+          icon: LucideIcons.refreshCw,
+          onTap: () {
+            const MessageActionsController().retry(session, message);
+          },
+        ),
+    ],
+  );
+}
 
 /// Wraps the rows of a settled message: notes the message on a touch (for the
 /// selection toolbar) and gives a screen reader the `Copy message` action. No

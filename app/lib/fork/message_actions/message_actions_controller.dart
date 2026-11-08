@@ -110,7 +110,18 @@ class MessageActionsController {
     final caps = capabilitiesOf(message, session: session);
     if (!caps.canRetry) return;
 
-    final promptText = text ?? message.text;
+    String promptText = text ?? message.text;
+    if (text == null && message.role == MessageRole.agent) {
+      final items = session.state.items;
+      final msgIndex = items.indexOf(message);
+      if (msgIndex > 0) {
+        final precedingUser = items
+            .take(msgIndex)
+            .whereType<TranscriptMessage>()
+            .lastWhere((m) => m.role == MessageRole.user, orElse: () => message);
+        promptText = precedingUser.text;
+      }
+    }
 
     final items = session.state.items;
     final msgIndex = items.indexOf(message);

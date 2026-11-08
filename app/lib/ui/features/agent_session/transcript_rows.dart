@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../data/acp/acp_models.dart';
 import '../../../data/acp/session_state.dart';
 import '../../../data/acp/turns/plain_text.dart' show safeEnd;
+import '../../../data/repositories/agent_session.dart';
 
 import 'package:herdr_mobile/ui/core/kit.dart';
 
@@ -11,7 +12,11 @@ import '../../render/markdown/markdown.dart';
 import 'code_panel.dart';
 import 'content_blocks.dart';
 import 'content_copy.dart';
+import 'transcript_plan.dart' show segmentsOf;
 import '../../render/visible_text.dart';
+import '../../../fork/message_actions/message_action_bar.dart';
+import '../../../fork/message_actions/message_action_sheet.dart'
+    show TranscriptSessionScope, showMessageActionSheet;
 
 /// Called with the row key each time a transcript row's `build` runs. Tests
 /// use it to prove a streaming answer rebuilds only the rows that changed.
@@ -71,6 +76,7 @@ class UserRow extends StatelessWidget {
           ? (full.length > panelTextLimit ? full.substring(0, safeEnd(full, panelTextLimit)) : full)
           : full.substring(0, safeEnd(full, full.length > _collapsedChars ? _collapsedChars : full.length)),
     );
+    final session = TranscriptSessionScope.of(context);
     return _gap(
       gap,
       MessageCopyTarget(
@@ -80,14 +86,26 @@ class UserRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (text.isNotEmpty)
-                Text(
-                  text,
-                  maxLines: collapsible && !open ? _collapsedLines : null,
-                  // An ellipsis without a line cap would cut the text to one line.
-                  overflow: collapsible && !open ? TextOverflow.ellipsis : TextOverflow.clip,
-                  style: Type.compact.copyWith(color: ds.text),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: text.isNotEmpty
+                        ? Text(
+                            text,
+                            maxLines: collapsible && !open ? _collapsedLines : null,
+                            // An ellipsis without a line cap would cut the text to one line.
+                            overflow: collapsible && !open ? TextOverflow.ellipsis : TextOverflow.clip,
+                            style: Type.compact.copyWith(color: ds.text),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  if (session != null) ...[
+                    const SizedBox(width: Gap.xs),
+                    _UserRowKebab(session: session, message: message),
+                  ],
+                ],
+              ),
               for (final block in message.blocks)
                 if (block is! TextBlock) ...[
                   const SizedBox(height: Gap.xs),
@@ -96,6 +114,34 @@ class UserRow extends StatelessWidget {
               if (collapsible) TextAction(label: open ? 'Show less' : 'Show more', onTap: () => onToggle(rowKey)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserRowKebab extends StatelessWidget {
+  const _UserRowKebab({
+    required this.session,
+    required this.message,
+  });
+
+  final AgentSessionView session;
+  final TranscriptMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+
+    return Semantics(
+      button: true,
+      label: 'Message actions',
+      child: InkWell(
+        onTap: () => showMessageActionSheet(context, session: session, message: message),
+        borderRadius: BorderRadius.circular(Radii.sm),
+        child: Padding(
+          padding: const EdgeInsets.all(Gap.hair),
+          child: Icon(LucideIcons.ellipsis, size: 14, color: ds.textSecondary),
         ),
       ),
     );
@@ -150,7 +196,28 @@ class AgentTextRow extends StatelessWidget {
       ),
     );
     final copy = message;
-    return _gap(gap, copy == null ? markdown : MessageCopyTarget(message: copy, child: markdown));
+    final session = TranscriptSessionScope.of(context);
+    final isLastBlock = copy != null && session != null && !quiet && () {
+      final segments = segmentsOf(copy);
+      if (segments.isEmpty) return true;
+      return rowKey.endsWith('#${segments.length - 1}') || !rowKey.contains('#');
+    }();
+
+    Widget content = markdown;
+    if (copy != null) {
+      content = MessageCopyTarget(message: copy, child: markdown);
+      if (isLastBlock) {
+        content = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            content,
+            MessageActionBar(session: session, message: copy),
+          ],
+        );
+      }
+    }
+    return _gap(gap, content);
   }
 }
 

@@ -790,73 +790,73 @@ class _TranscriptViewState extends State<TranscriptView> with TickerProviderStat
             child: AgentMdScope(
               session: widget.session,
               child: Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerDown: _fingerDown,
-              onPointerUp: _fingerUp,
-              onPointerCancel: _fingerUp,
-              child: ContentSelectionArea(
-                // The rows from [_center] on grow downward from the origin; the
-                // older ones grow upward from it, and are built only as they
-                // scroll into view. The view starts at the end of the newer ones,
-                // so opening a long transcript lays out a screenful, not all of it.
-                child: CustomScrollView(
-                  controller: _scroll,
-                  center: _centerKey,
-                  slivers: [
-                    // Above the oldest row. With no older rows it is the
-                    // center itself: what comes before the center is above
-                    // the screen of a list that starts at the center.
-                    if (earlierRow != null)
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _fingerDown,
+                onPointerUp: _fingerUp,
+                onPointerCancel: _fingerUp,
+                child: ContentSelectionArea(
+                  // The rows from [_center] on grow downward from the origin; the
+                  // older ones grow upward from it, and are built only as they
+                  // scroll into view. The view starts at the end of the newer ones,
+                  // so opening a long transcript lays out a screenful, not all of it.
+                  child: CustomScrollView(
+                    controller: _scroll,
+                    center: _centerKey,
+                    slivers: [
+                      // Above the oldest row. With no older rows it is the
+                      // center itself: what comes before the center is above
+                      // the screen of a list that starts at the center.
+                      if (earlierRow != null)
+                        SliverPadding(
+                          key: center == 0 ? _centerKey : null,
+                          padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
+                          sliver: SliverToBoxAdapter(child: earlierRow),
+                        ),
+                      if (center > 0)
+                        SliverPadding(
+                          padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, j) => _row(context, center - 1 - j),
+                              childCount: center,
+                              findChildIndexCallback: (key) {
+                                final at = key is ValueKey<String> ? index[key.value] : null;
+                                return at == null || at >= center ? null : center - 1 - at;
+                              },
+                              addAutomaticKeepAlives: false,
+                              addSemanticIndexes: false,
+                            ),
+                          ),
+                        ),
                       SliverPadding(
-                        key: center == 0 ? _centerKey : null,
-                        padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
-                        sliver: SliverToBoxAdapter(child: earlierRow),
-                      ),
-                    if (center > 0)
-                      SliverPadding(
-                        padding: const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg),
+                        key: center == 0 && earlierRow != null ? null : _centerKey,
+                        padding: center == 0 && earlierRow == null
+                            ? const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg)
+                            : const EdgeInsets.symmetric(horizontal: Gap.lg),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
-                            (context, j) => _row(context, center - 1 - j),
-                            childCount: center,
+                            (context, j) => _row(context, center + j),
+                            childCount: _rows.length - center,
                             findChildIndexCallback: (key) {
                               final at = key is ValueKey<String> ? index[key.value] : null;
-                              return at == null || at >= center ? null : center - 1 - at;
+                              return at == null || at < center ? null : at - center;
                             },
                             addAutomaticKeepAlives: false,
                             addSemanticIndexes: false,
                           ),
                         ),
                       ),
-                    SliverPadding(
-                      key: center == 0 && earlierRow != null ? null : _centerKey,
-                      padding: center == 0 && earlierRow == null
-                          ? const EdgeInsets.only(left: Gap.lg, top: Gap.sm, right: Gap.lg)
-                          : const EdgeInsets.symmetric(horizontal: Gap.lg),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, j) => _row(context, center + j),
-                          childCount: _rows.length - center,
-                          findChildIndexCallback: (key) {
-                            final at = key is ValueKey<String> ? index[key.value] : null;
-                            return at == null || at < center ? null : at - center;
-                          },
-                          addAutomaticKeepAlives: false,
-                          addSemanticIndexes: false,
-                        ),
+                      // What the agent is doing right now, after the last row.
+                      SliverPadding(
+                        padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.lg),
+                        sliver: SliverToBoxAdapter(child: StatusLine(session: widget.session)),
                       ),
-                    ),
-                    // What the agent is doing right now, after the last row.
-                    SliverPadding(
-                      padding: const EdgeInsets.only(left: Gap.lg, right: Gap.lg, bottom: Gap.lg),
-                      sliver: SliverToBoxAdapter(child: StatusLine(session: widget.session)),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
         ),
         Positioned(
           right: Gap.md,

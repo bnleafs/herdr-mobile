@@ -5,14 +5,12 @@ import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/fork/message_actions/message_actions_controller.dart';
 
 class FakeAgentSession implements AgentSessionView {
-  FakeAgentSession({
-    required this.state,
-    this.phase = AgentPhase.idle,
-  });
+  FakeAgentSession({required this.state, this.phase = AgentPhase.idle});
 
   @override
   AgentSessionState state;
 
+  @override
   final AgentPhase phase;
   final List<String> sentMessages = [];
 
@@ -34,17 +32,11 @@ void main() {
       controller = const MessageActionsController();
     });
 
-    TranscriptMessage userMsg(String key, String text) => TranscriptMessage(
-      key: key,
-      role: MessageRole.user,
-      blocks: [TextBlock(text)],
-    );
+    TranscriptMessage userMsg(String key, String text) =>
+        TranscriptMessage(key: key, role: MessageRole.user, blocks: [TextBlock(text)]);
 
-    TranscriptMessage agentMsg(String key, String text) => TranscriptMessage(
-      key: key,
-      role: MessageRole.agent,
-      blocks: [TextBlock(text)],
-    );
+    TranscriptMessage agentMsg(String key, String text) =>
+        TranscriptMessage(key: key, role: MessageRole.agent, blocks: [TextBlock(text)]);
 
     test('capabilitiesOf for user message: latest turn allows copy, edit, undo (dist=1), and retry', () {
       final m1 = userMsg('u1', 'First user prompt');

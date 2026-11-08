@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../data/acp/session_state.dart';
 import '../../data/repositories/agent_session.dart';
+
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import 'message_actions_controller.dart';
@@ -56,11 +57,7 @@ class MessageActionBar extends StatelessWidget {
 }
 
 class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
+  const _ActionButton({required this.icon, required this.tooltip, required this.onTap});
 
   final IconData icon;
   final String tooltip;

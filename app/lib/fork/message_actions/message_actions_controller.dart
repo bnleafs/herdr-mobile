@@ -1,12 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../data/acp/acp_models.dart';
 import '../../data/acp/session_state.dart';
 import '../../data/repositories/agent_session.dart';
-import '../../ui/core/toast.dart';
+import '../../ui/core/kit.dart';
 import '../../ui/features/agent_session/content_copy.dart';
 
 /// Capabilities of a given message for actions like copy, edit, undo, and retry.
@@ -39,10 +38,7 @@ class MessageActionsController {
   static const int maxRewindTurns = 3;
 
   /// Evaluates action capabilities for [message] against current [session] state.
-  MessageCapabilities capabilitiesOf(
-    TranscriptMessage message, {
-    required AgentSessionView session,
-  }) {
+  MessageCapabilities capabilitiesOf(TranscriptMessage message, {required AgentSessionView session}) {
     final hasText = message.text.trim().isNotEmpty;
     final isWorking = session.phase == AgentPhase.working;
 
@@ -84,24 +80,14 @@ class MessageActionsController {
   }
 
   /// Copies message text (or raw markdown) to clipboard and shows feedback toast.
-  Future<void> copy(
-    BuildContext context,
-    TranscriptMessage message, {
-    bool markdown = false,
-  }) async {
+  Future<void> copy(BuildContext context, TranscriptMessage message, {bool markdown = false}) async {
     final text = markdown ? messageMarkdown(message) : messagePlainText(message);
     if (text.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: text));
-    if (context.mounted) {
-      showToast(context, markdown ? 'Copied Markdown' : 'Copied to clipboard');
-    }
+    await copyText(context, text, what: markdown ? 'Markdown copied' : 'Message copied');
   }
 
   /// Populates the composer draft with message text.
-  void editInComposer(
-    TranscriptMessage message, {
-    required void Function(String text) onSetDraft,
-  }) {
+  void editInComposer(TranscriptMessage message, {required void Function(String text) onSetDraft}) {
     onSetDraft(message.text);
   }
 
@@ -120,11 +106,7 @@ class MessageActionsController {
 
   /// Retries a turn: if it already started, runs `/undo` to revert file changes
   /// and rewind, then re-sends the prompt.
-  Future<void> retry(
-    AgentSessionView session,
-    TranscriptMessage message, {
-    String? text,
-  }) async {
+  Future<void> retry(AgentSessionView session, TranscriptMessage message, {String? text}) async {
     final caps = capabilitiesOf(message, session: session);
     if (!caps.canRetry) return;
 
@@ -132,7 +114,8 @@ class MessageActionsController {
 
     final items = session.state.items;
     final msgIndex = items.indexOf(message);
-    final hasSubsequentAgentReply = msgIndex >= 0 &&
+    final hasSubsequentAgentReply =
+        msgIndex >= 0 &&
         items.skip(msgIndex + 1).any((item) => item is TranscriptMessage && item.role == MessageRole.agent);
 
     if (hasSubsequentAgentReply && caps.turnDistance > 0) {

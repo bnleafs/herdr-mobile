@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../data/acp/acp_models.dart';
 import '../../data/acp/session_state.dart';
 import '../../data/repositories/agent_session.dart';
+
 import 'package:herdr_mobile/ui/core/kit.dart';
 
 import 'message_actions_controller.dart';
@@ -19,12 +20,8 @@ Future<void> showMessageActionSheet(
   final draftSetter = onSetDraft ?? ComposerDraftScope.of(context);
   await showAppSheet<void>(
     context,
-    builder: (ctx) => _MessageActionSheetContent(
-      session: session,
-      message: message,
-      controller: controller,
-      onSetDraft: draftSetter,
-    ),
+    builder: (ctx) =>
+        _MessageActionSheetContent(session: session, message: message, controller: controller, onSetDraft: draftSetter),
   );
 }
 
@@ -99,9 +96,7 @@ class _MessageActionSheetContent extends StatelessWidget {
                 dense: true,
                 leading: Icon(LucideIcons.undo2, size: IconSize.inline, color: ds.blocked),
                 title: Text(
-                  caps.turnDistance > 1
-                      ? 'Undo ${caps.turnDistance} turns & file changes'
-                      : 'Undo turn & file changes',
+                  caps.turnDistance > 1 ? 'Undo ${caps.turnDistance} turns & file changes' : 'Undo turn & file changes',
                   style: Type.body.copyWith(color: ds.blocked),
                 ),
                 onTap: () async {
@@ -110,7 +105,8 @@ class _MessageActionSheetContent extends StatelessWidget {
                     final confirm = await _confirmMultiTurn(
                       context,
                       title: 'Undo ${caps.turnDistance} turns?',
-                      body: 'This will issue /undo ${caps.turnDistance} times and revert file changes from all ${caps.turnDistance} turns.',
+                      body:
+                          'This will issue /undo ${caps.turnDistance} times and revert file changes from all ${caps.turnDistance} turns.',
                       confirmLabel: 'Undo turns',
                     );
                     if (confirm != true) return;
@@ -123,9 +119,7 @@ class _MessageActionSheetContent extends StatelessWidget {
                 dense: true,
                 leading: Icon(LucideIcons.refreshCw, size: IconSize.inline, color: ds.text),
                 title: Text(
-                  caps.turnDistance > 1
-                      ? 'Rewind ${caps.turnDistance} turns & retry'
-                      : 'Retry turn',
+                  caps.turnDistance > 1 ? 'Rewind ${caps.turnDistance} turns & retry' : 'Retry turn',
                   style: Type.body.copyWith(color: ds.text),
                 ),
                 onTap: () async {
@@ -170,11 +164,7 @@ class _MessageActionSheetContent extends StatelessWidget {
 
 /// Inherited scope allowing message action sheets to populate the active composer input.
 class ComposerDraftScope extends InheritedWidget {
-  const ComposerDraftScope({
-    required this.setDraft,
-    required super.child,
-    super.key,
-  });
+  const ComposerDraftScope({required this.setDraft, required super.child, super.key});
 
   final void Function(String text) setDraft;
 
@@ -187,11 +177,7 @@ class ComposerDraftScope extends InheritedWidget {
 
 /// Inherited scope providing [AgentSessionView] to transcript rows for message actions.
 class TranscriptSessionScope extends InheritedWidget {
-  const TranscriptSessionScope({
-    required this.session,
-    required super.child,
-    super.key,
-  });
+  const TranscriptSessionScope({required this.session, required super.child, super.key});
 
   final AgentSessionView session;
 
@@ -201,4 +187,3 @@ class TranscriptSessionScope extends InheritedWidget {
   @override
   bool updateShouldNotify(TranscriptSessionScope oldWidget) => session != oldWidget.session;
 }
-

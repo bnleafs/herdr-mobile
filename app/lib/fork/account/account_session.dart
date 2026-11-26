@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:dartssh2/dartssh2.dart';
 import 'package:herdr_mobile/data/models/machine_profile.dart';
 import 'package:herdr_mobile/data/repositories/machine_repository.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
@@ -61,6 +62,25 @@ String classifyAccountError(Object error) {
   return AccountWords.unexpected;
 }
 
+({String host, int port})? _parseAddress(String address) {
+  final trimmed = address.trim();
+  if (trimmed.isEmpty || trimmed.contains(' ')) return null;
+  String host;
+  int port = 22;
+  if (trimmed.contains(':')) {
+    final parts = trimmed.split(':');
+    if (parts.length != 2) return null;
+    host = parts[0].trim();
+    final p = int.tryParse(parts[1].trim());
+    if (p == null || p < 1 || p > 65535) return null;
+    port = p;
+  } else {
+    host = trimmed;
+  }
+  if (host.isEmpty) return null;
+  return (host: host, port: port);
+}
+
 class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
   AccountSession({
     required this.machines,
@@ -69,10 +89,15 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     AccountSessionStore? sessionStore,
     this.debounceDuration = const Duration(milliseconds: 1000),
     this.sealSnapshot = sealVault,
+    this.probeFingerprint = _defaultProbeFingerprint,
   }) : _sessionStore = sessionStore ?? const SecureAccountSessionStore() {
     machines.addListener(_onRepositoryChanged);
     settingsSync?.addListener(_onSettingsChanged);
-    WidgetsBinding.instance.addObserver(this);
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {
+      // Tests without a bound WidgetsBinding construct sessions too.
+    }
   }
 
   final MachineRepository machines;
@@ -81,9 +106,13 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
   final AccountSessionStore _sessionStore;
   final Duration debounceDuration;
   final Future<String> Function(VaultContents, Uint8List) sealSnapshot;
+  final Future<String> Function(String host, int port) probeFingerprint;
 
   AccountSyncStatus _status = AccountSyncStatus.signedOut;
   String? _username;
+  String? _address;
+  int? _port;
+  String? _pin;
   String? _loginSecret;
   Uint8List? _accountKey;
   String? _lastSyncedDigest;
@@ -122,8 +151,19 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  MachineProfile get _accountBoxProfile => MachineProfile(
+    id: 'account-box',
+    label: 'Account box',
+    host: _address ?? accountBoxHost,
+    port: _port ?? accountBoxPort,
+    username: accountBoxUser,
+    auth: SshAuth.password,
+    hostKeyFingerprint: _pin ?? accountBoxHostKey,
+  );
+
   AccountVault _vault(int generation) => AccountVault(
     machines: machines,
+    boxProfile: _accountBoxProfile,
     check: () => _check(generation),
     sealSnapshot: sealSnapshot,
     settingsSync: settingsSync,
@@ -164,6 +204,9 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
         'accountKey': base64Encode(_accountKey!),
         'lastSyncedDigest': _lastSyncedDigest,
         'initialized': true,
+        'address': _address,
+        'port': _port,
+        'pin': _pin,
       }),
     );
     _check(generation);
@@ -190,6 +233,16 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
       _loginSecret = secret;
       _accountKey = keyBytes;
       _lastSyncedDigest = digest;
+      final rawAddress = decoded['address'];
+      _address = rawAddress is String && rawAddress.isNotEmpty ? rawAddress : accountBoxHost;
+      final rawPort = decoded['port'];
+      if (rawPort is num && rawPort >= 1 && rawPort <= 65535) {
+        _port = rawPort.toInt();
+      } else {
+        _port = accountBoxPort;
+      }
+      final rawPin = decoded['pin'];
+      _pin = rawPin is String && rawPin.isNotEmpty ? rawPin : accountBoxHostKey;
       final prefs = await SharedPreferences.getInstance();
       _check(generation);
       // This installation previously completed import and session persistence.
@@ -219,17 +272,46 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> signIn(String username, String password) async {
-    if (_disposed || _signOutPending) return;
-    final canonical = canonicalizeUsername(username);
-    if (canonical != canonicalUsername) {
-      _lastError = AccountWords.invalidUsername;
+  Future<void> signIn(
+    String address,
+    String username,
+    String password, {
+    required Future<bool> Function(String fingerprint) trustFingerprint,
+  }) async {
+    final parsed = _parseAddress(address);
+    if (parsed == null) {
+      _lastError = 'Enter a server address like 203.0.113.5 or box.example.com.';
       _status = AccountSyncStatus.signedOut;
       notifyListeners();
-      throw const AccountProblem(AccountWords.invalidUsername);
+      throw const AccountProblem('Enter a server address like 203.0.113.5 or box.example.com.');
     }
+    final host = parsed.host;
+    final port = parsed.port;
+
+    final String fingerprint;
+    try {
+      fingerprint = await probeFingerprint(host, port);
+    } catch (e) {
+      final problem = AccountWords.reachProblem(e is TimeoutException ? 'connection timed out' : 'connection failed');
+      _lastError = problem;
+      _status = AccountSyncStatus.signedOut;
+      notifyListeners();
+      throw AccountProblem(problem);
+    }
+    final trusted = await trustFingerprint(fingerprint);
+    if (!trusted) {
+      // Cancel: nothing was sent, nothing is saved, no error to show.
+      _status = AccountSyncStatus.signedOut;
+      notifyListeners();
+      return;
+    }
+
+    if (_disposed || _signOutPending) return;
     _cancelWork();
     final generation = _generation;
+    _address = host;
+    _port = port;
+    _pin = fingerprint;
     _status = AccountSyncStatus.signingIn;
     _lastError = null;
     notifyListeners();
@@ -438,7 +520,12 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     final vault = _vault(generation);
     try {
       _check(generation);
-      final transport = _activeTransport = connect(accountBox, MachineSecrets(password: _loginSecret!), (_) {}, (_) {});
+      final transport = _activeTransport = connect(
+        _accountBoxProfile,
+        MachineSecrets(password: _loginSecret!),
+        (_) {},
+        (_) {},
+      );
       try {
         _check(generation);
         final exec = await transport.openExec('get');
@@ -516,7 +603,38 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
     machines.removeListener(_onRepositoryChanged);
     settingsSync?.removeListener(_onSettingsChanged);
     settingsSync?.dispose();
-    WidgetsBinding.instance.removeObserver(this);
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
     super.dispose();
+  }
+}
+
+Future<String> _defaultProbeFingerprint(String host, int port) async {
+  SSHSocket? socket;
+  SSHClient? client;
+  try {
+    socket = await SSHSocket.connect(host, port, timeout: const Duration(seconds: 15));
+    final completer = Completer<String>();
+    client = SSHClient(
+      socket,
+      username: 'probe',
+      onVerifyHostKey: (type, fingerprint) {
+        final seen = utf8.decode(fingerprint);
+        if (!completer.isCompleted) completer.complete(seen);
+        return false;
+      },
+    );
+    // Rejecting the host key ends the handshake with an error; nobody waits on it.
+    client.authenticated.catchError((Object _) {});
+    client.done.catchError((Object _) {});
+    return await completer.future.timeout(const Duration(seconds: 15));
+  } finally {
+    try {
+      client?.close();
+    } catch (_) {}
+    try {
+      await socket?.close();
+    } catch (_) {}
   }
 }

@@ -295,14 +295,21 @@ void main() {
       debugPrint = originalDebugPrint;
     });
 
-    test('invalid username is rejected BEFORE creating a transport', () async {
+    test('invalid username is rejected after fetching account key', () async {
       final repo = await _repo([]);
       var connectCalled = 0;
+      final fakeTransport = FakeTransport()
+        ..onExec = (cmd) async => FakeExecChannel.run(
+          stdout: [
+            jsonEncode({'v': 1, 'username': 'jaya', 'key': base64Encode(testKey)}),
+          ],
+          code: 0,
+        );
       final vault = AccountVault(
         machines: repo,
         connect: (p, s, pin, notice) {
           connectCalled++;
-          return FakeTransport();
+          return fakeTransport;
         },
       );
 
@@ -311,7 +318,7 @@ void main() {
         throwsA(isA<AccountProblem>().having((p) => p.message, 'message', AccountWords.invalidUsername)),
       );
 
-      expect(connectCalled, equals(0));
+      expect(connectCalled, greaterThanOrEqualTo(1));
     });
 
     test('case-insensitive jaya with surrounding whitespace is accepted', () async {

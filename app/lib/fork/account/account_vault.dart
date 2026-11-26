@@ -58,7 +58,7 @@ void _allowOperation() {}
 abstract final class AccountWords {
   static const intro = 'One account brings your machines, keys and passwords to this phone. Edits sync automatically.';
 
-  static const invalidUsername = 'Account not found. Only account jaya is supported.';
+  static const invalidUsername = 'Account not found.';
 
   static String signInDone(int added, int updated) =>
       'Signed in \u00b7 ${countOf(added, 'machine')} added, $updated updated';
@@ -432,7 +432,11 @@ Uint8List _runOpenV2({required Uint8List ct, required Uint8List key, required Ui
 
 /// Literal SSH command `key` fetches server-provisioned account key:
 /// {"v":1,"username":"jaya","key":"BASE64_32_BYTES"}
-Future<Uint8List> fetchAccountKey(HerdrTransport transport, {void Function() check = _allowOperation}) async {
+Future<Uint8List> fetchAccountKey(
+  HerdrTransport transport, {
+  void Function() check = _allowOperation,
+  String expectedUsername = canonicalUsername,
+}) async {
   check();
   final exec = await transport.openExec('key');
   check();
@@ -451,8 +455,12 @@ Future<Uint8List> fetchAccountKey(HerdrTransport transport, {void Function() che
   } on FormatException {
     throw const AccountProblem(AccountWords.unreadableFile);
   }
-  if (json is! Map || json['v'] != 1 || json['username'] != canonicalUsername || json['key'] is! String) {
+  if (json is! Map || json['v'] != 1 || json['username'] is! String || json['key'] is! String) {
     throw const AccountProblem(AccountWords.unreadableFile);
+  }
+  // The account name lives on the server (account.json), not in the app.
+  if (canonicalizeUsername(json['username'] as String) != canonicalizeUsername(expectedUsername)) {
+    throw const AccountProblem(AccountWords.invalidUsername);
   }
   final Uint8List keyBytes;
   try {
@@ -470,6 +478,7 @@ class AccountVault {
   AccountVault({
     required this.machines,
     required this.connect,
+    this.boxProfile = accountBox,
     this.settingsSync,
     this.timeout = accountTimeout,
     this.check = _allowOperation,
@@ -478,6 +487,7 @@ class AccountVault {
 
   final MachineRepository machines;
   final TransportFactory connect;
+  final MachineProfile boxProfile;
   final SettingsSync? settingsSync;
   final Duration timeout;
   final void Function() check;
@@ -487,10 +497,6 @@ class AccountVault {
     String username,
     String password,
   ) async {
-    final canonical = canonicalizeUsername(username);
-    if (canonical != canonicalUsername) {
-      throw const AccountProblem(AccountWords.invalidUsername);
-    }
     check();
     final secret = await loginSecret(password);
     check();
@@ -500,9 +506,9 @@ class AccountVault {
     final (contents, accountKey) = await _runWithTimeout(
       () async {
         check();
-        final transport = opened = connect(accountBox, login, (_) {}, (_) {});
+        final transport = opened = connect(boxProfile, login, (_) {}, (_) {});
         try {
-          final key = await fetchAccountKey(transport, check: check);
+          final key = await fetchAccountKey(transport, check: check, expectedUsername: username);
           check();
           final exec = await transport.openExec('get');
           check();
@@ -632,7 +638,7 @@ class AccountVault {
     return await _runWithTimeout(
       () async {
         check();
-        final transport = opened = connect(accountBox, login, (_) {}, (_) {});
+        final transport = opened = connect(boxProfile, login, (_) {}, (_) {});
         try {
           check();
           final exec = await transport.openExec('put');

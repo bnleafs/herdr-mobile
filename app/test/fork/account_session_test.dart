@@ -45,26 +45,6 @@ void main() {
   });
 
   group('AccountSession login and import invariants', () {
-    test('invalid username throws and opens no transport', () async {
-      final repo = await _repo([]);
-      var transportsOpened = 0;
-      final session = AccountSession(
-        machines: repo,
-        connect: (p, s, pin, n) {
-          transportsOpened++;
-          return FakeTransport();
-        },
-        sessionStore: MemoryAccountSessionStore(),
-        debounceDuration: Duration.zero,
-      );
-
-      await expectLater(() => session.signIn('not-jaya', 'password'), throwsA(isA<AccountProblem>()));
-
-      expect(transportsOpened, equals(0));
-      expect(session.isSignedIn, isFalse);
-      expect(session.lastError, equals(AccountWords.invalidUsername));
-    });
-
     test('wrong password does not mutate machine repository or session store', () async {
       final repo = await _repo([]);
       final sessionStore = MemoryAccountSessionStore();
@@ -75,12 +55,16 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
       );
 
-      await expectLater(() => session.signIn('jaya', 'wrong-pw'), throwsA(isA<AccountProblem>()));
+      await expectLater(
+        () => session.signIn('140.245.204.23', 'jaya', 'wrong-pw', trustFingerprint: (_) async => true),
+        throwsA(isA<AccountProblem>()),
+      );
 
       expect(session.isSignedIn, isFalse);
       expect(session.lastError, equals(AccountWords.wrongPassword));
@@ -140,12 +124,13 @@ void main() {
 
         final session = AccountSession(
           machines: repo,
+          probeFingerprint: (host, port) async => 'SHA256:testpin',
           connect: (p, s, pin, n) => fakeTransport,
           sessionStore: sessionStore,
           debounceDuration: Duration.zero,
         );
 
-        await session.signIn('jaya', 'correct-password');
+        await session.signIn('140.245.204.23', 'jaya', 'correct-password', trustFingerprint: (_) async => true);
 
         // Adversarial check: key-before-get and pull-before-put
         expect(commandsRun, equals(['key', 'get']));
@@ -184,13 +169,14 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: MemoryAccountSessionStore(),
         debounceDuration: Duration.zero,
       );
 
       await expectLater(
-        () => session.signIn('jaya', 'pw'),
+        () => session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true),
         throwsA(isA<AccountProblem>().having((p) => p.message, 'message', AccountWords.nothingSaved)),
       );
 
@@ -226,6 +212,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => FakeTransport(),
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
@@ -284,6 +271,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
@@ -324,6 +312,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: const Duration(milliseconds: 50),
@@ -379,6 +368,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
@@ -414,6 +404,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
@@ -458,6 +449,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => FakeTransport(),
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
@@ -492,6 +484,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
@@ -538,6 +531,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: const Duration(milliseconds: 100),
@@ -596,6 +590,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: const Duration(milliseconds: 100),
@@ -646,13 +641,14 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
       );
 
       try {
-        await session.signIn('jaya', 'pw');
+        await session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
       } catch (_) {}
 
       debugPrint = originalDebugPrint;
@@ -668,6 +664,7 @@ void main() {
       final repo = await _repo([]);
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => FakeTransport(),
         sessionStore: MemoryAccountSessionStore(),
       );
@@ -714,6 +711,7 @@ void main() {
 
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => FakeTransport(),
         sessionStore: sessionStore,
       );
@@ -744,6 +742,7 @@ void main() {
       final repo = await _repo([]);
       final session = AccountSession(
         machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         connect: (p, s, pin, n) => FakeTransport(),
         sessionStore: MemoryAccountSessionStore(),
       );

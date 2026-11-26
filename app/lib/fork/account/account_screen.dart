@@ -49,6 +49,7 @@ class AccountScreen extends StatefulWidget {
 }
 
 class _AccountScreenState extends State<AccountScreen> {
+  final _addressController = TextEditingController();
   final _usernameController = TextEditingController(text: canonicalUsername);
   final _passwordController = TextEditingController();
   var _busy = false;
@@ -57,12 +58,14 @@ class _AccountScreenState extends State<AccountScreen> {
 
   @override
   void dispose() {
+    _addressController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _signIn() async {
+    final address = _addressController.text.trim();
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
     if (_busy || password.isEmpty) return;
@@ -80,7 +83,26 @@ class _AccountScreenState extends State<AccountScreen> {
 
     try {
       if (session != null) {
-        await session.signIn(username, password);
+        await session.signIn(
+          address,
+          username,
+          password,
+          trustFingerprint: (fingerprint) async {
+            if (!mounted) return false;
+            final result = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Trust this server?'),
+                content: Text(fingerprint),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+                  TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Accept')),
+                ],
+              ),
+            );
+            return result ?? false;
+          },
+        );
         if (!session.isSignedIn) return;
       } else {
         final vault = AccountVault(
@@ -170,6 +192,8 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: Gap.sm),
         FormPanel(
           children: [
+            _ServerAddressField(controller: _addressController),
+            const SizedBox(height: Gap.md),
             _UsernameField(controller: _usernameController),
             const SizedBox(height: Gap.md),
             _PhraseField(
@@ -268,6 +292,42 @@ class _AccountScreenState extends State<AccountScreen> {
             expand: true,
             loading: _busy,
             onPressed: _busy ? null : _signOut,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ServerAddressField extends StatelessWidget {
+  const _ServerAddressField({required this.controller});
+
+  static const label = 'Server address';
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: ExcludeSemantics(
+            child: Text(label, style: Type.label.copyWith(color: ds.textSecondary)),
+          ),
+        ),
+        Semantics(
+          label: label,
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            enableSuggestions: false,
+            style: Type.input.copyWith(color: ds.text),
+            cursorColor: ds.accent,
+            decoration: const InputDecoration(helperText: ' ', helperMaxLines: 1),
           ),
         ),
       ],

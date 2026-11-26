@@ -123,6 +123,7 @@ AccountSession sessionFor(
     machines: repo,
     sessionStore: store,
     connect: (p, s, pin, n) => box,
+    probeFingerprint: (host, port) async => 'SHA256:testpin',
     debounceDuration: debounce,
   );
   addTearDown(session.dispose);
@@ -152,7 +153,10 @@ void main() {
     final store = FailingStore()..failWrite = true;
     final box = await seededBox(const VaultContents(machines: [remote]));
     final session = sessionFor(repo, store, box);
-    await expectLater(session.signIn('jaya', 'pw'), throwsA(isA<Object>()));
+    await expectLater(
+      session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true),
+      throwsA(isA<Object>()),
+    );
     await repo.save(local);
     await session.retry();
     expect(box.execCommands.contains('put'), isFalse);
@@ -174,7 +178,7 @@ void main() {
       return original(cmd);
     };
     final session = sessionFor(repo, store, box);
-    final signingIn = session.signIn('jaya', 'pw');
+    final signingIn = session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
     await entered.future;
     await session.signOut();
     final closedAtSignOut = box.closed;
@@ -192,7 +196,7 @@ void main() {
     final store = BlockingStore();
     final box = await seededBox(const VaultContents(machines: [remote]));
     final session = sessionFor(repo, store, box);
-    final signingIn = session.signIn('jaya', 'pw');
+    final signingIn = session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
     await store.writing.future;
     final signingOut = session.signOut();
     store.release.complete();
@@ -217,7 +221,7 @@ void main() {
       return original(cmd);
     };
     final session = sessionFor(repo, store, box);
-    final signingIn = session.signIn('jaya', 'pw');
+    final signingIn = session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
     await entered.future;
     session.didChangeAppLifecycleState(AppLifecycleState.paused);
     release.complete();
@@ -233,7 +237,7 @@ void main() {
     final store = MemoryAccountSessionStore();
     final box = await seededBox(const VaultContents(machines: [remote]));
     final session = sessionFor(repo, store, box);
-    final signingIn = session.signIn('jaya', 'pw');
+    final signingIn = session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
     await secrets.reading.future;
     session.didChangeAppLifecycleState(AppLifecycleState.paused);
     secrets.release.complete();
@@ -260,6 +264,7 @@ void main() {
           connections++;
           return FakeTransport();
         },
+        probeFingerprint: (host, port) async => 'SHA256:testpin',
         sealSnapshot: (contents, key) async {
           entered.complete();
           await release.future;
@@ -394,7 +399,7 @@ void main() {
     final store = MemoryAccountSessionStore();
     final box = await seededBox(const VaultContents(machines: [remote]));
     final session = sessionFor(repo, store, box);
-    await session.signIn('jaya', 'pw');
+    await session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
     await session.activeUpload;
     expect(box.execCommands, ['key', 'get', 'put']);
     expect(session.status, AccountSyncStatus.synced);
@@ -428,7 +433,10 @@ void main() {
       if (restore) {
         await session.init();
       } else {
-        await expectLater(session.signIn('jaya', 'pw'), throwsA(isA<AccountProblem>()));
+        await expectLater(
+          session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true),
+          throwsA(isA<AccountProblem>()),
+        );
       }
       expect(repo.machines, isEmpty);
       expect(session.isInitialized, isFalse);
@@ -458,7 +466,7 @@ void main() {
         if (restore) {
           await session.init();
         } else {
-          await session.signIn('jaya', 'pw');
+          await session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
         }
         await session.activeUpload;
         final effective = await repo.secretsFor('keyed');

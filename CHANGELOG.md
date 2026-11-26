@@ -4,6 +4,23 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.64] - 2026-11-26
+
+### herdr j: sign in with a server address (F21)
+
+- **Server address on the sign-in form**: herdr j no longer has the box's address
+  built in. Type the server address (`203.0.113.5`, `box.example.com`, or
+  `host:port`), your username and your password. Moving the box to a new server
+  no longer needs a new app release.
+- **Fingerprint check before the password leaves the phone**: the app first reads
+  the server's host key without sending anything, shows its fingerprint, and signs
+  in only after you tap Accept. Cancel saves nothing. Every later sync is pinned to
+  the fingerprint you accepted.
+- **Username checked by the server**: the username you type is compared with the
+  account the server holds.
+- **No action needed when you update**: a phone already signed in keeps working
+  with the address and key it already trusted.
+
 ## [0.1.63] - 2026-11-08
 
 ### Dynamic Session Chips (F19) and Chat Message Actions (F20)

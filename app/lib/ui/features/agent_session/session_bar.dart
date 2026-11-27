@@ -392,7 +392,8 @@ class _OptionsSheetState extends State<_OptionsSheet> {
             if (settings.isEmpty) return const SizedBox.shrink();
             final picks = [
               for (final s in settings)
-                if (s.kind == _Kind.select) s.currentName,
+                // fork: a setting with no value yet adds no empty name.
+                if (s.kind == _Kind.select && s.currentName.trim().isNotEmpty) s.currentName,
             ].take(2).join(' \u00b7 ');
             return _SettingRow(
               title: 'Mode and model',

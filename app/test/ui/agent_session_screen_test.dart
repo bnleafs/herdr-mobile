@@ -1057,6 +1057,29 @@ void main() {
       expect(inSheet('Session overview'), findsOneWidget);
     });
 
+    testWidgets('the settings row leaves out a setting with no value yet (fork)', (tester) async {
+      final session = FakeAgentSession(
+        state: stateWith(
+          options: const [
+            SelectConfigOption(id: 'model', name: 'Model', category: 'model', value: '', choices: []),
+            SelectConfigOption(
+              id: 'effortless',
+              name: 'Effortless',
+              category: 'other',
+              value: 'auto',
+              choices: [ConfigChoice(value: 'auto', name: 'Auto')],
+            ),
+          ],
+        ),
+      );
+      await pumpScreen(tester, session);
+      await tester.tap(find.byTooltip('Session options'));
+      await tester.pumpAndSettle();
+      Finder inSheet(String text) => find.descendant(of: find.byType(SheetSurface), matching: find.text(text));
+      expect(inSheet('Mode and model'), findsOneWidget);
+      expect(inSheet('Auto'), findsOneWidget, reason: 'a blank model adds no empty name and no separator');
+    });
+
     testWidgets('in the settings sheet a switch has the same left edge as the other rows', (tester) async {
       final session = FakeAgentSession(
         state: stateWith(

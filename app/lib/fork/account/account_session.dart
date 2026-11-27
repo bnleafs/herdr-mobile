@@ -154,11 +154,11 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
   MachineProfile get _accountBoxProfile => MachineProfile(
     id: 'account-box',
     label: 'Account box',
-    host: _address ?? accountBoxHost,
-    port: _port ?? accountBoxPort,
+    host: _address!,
+    port: _port!,
     username: accountBoxUser,
     auth: SshAuth.password,
-    hostKeyFingerprint: _pin ?? accountBoxHostKey,
+    hostKeyFingerprint: _pin!,
   );
 
   AccountVault _vault(int generation) => AccountVault(
@@ -234,15 +234,26 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
       _accountKey = keyBytes;
       _lastSyncedDigest = digest;
       final rawAddress = decoded['address'];
-      _address = rawAddress is String && rawAddress.isNotEmpty ? rawAddress : accountBoxHost;
       final rawPort = decoded['port'];
-      if (rawPort is num && rawPort >= 1 && rawPort <= 65535) {
-        _port = rawPort.toInt();
-      } else {
-        _port = accountBoxPort;
-      }
       final rawPin = decoded['pin'];
-      _pin = rawPin is String && rawPin.isNotEmpty ? rawPin : accountBoxHostKey;
+      if (rawAddress is! String ||
+          rawAddress.isEmpty ||
+          rawPin is! String ||
+          rawPin.isEmpty ||
+          rawPort is! num ||
+          rawPort < 1 ||
+          rawPort > 65535) {
+        _username = null;
+        _loginSecret = null;
+        _accountKey = null;
+        _lastSyncedDigest = null;
+        _status = AccountSyncStatus.signedOut;
+        notifyListeners();
+        return;
+      }
+      _address = rawAddress;
+      _port = rawPort.toInt();
+      _pin = rawPin;
       final prefs = await SharedPreferences.getInstance();
       _check(generation);
       // This installation previously completed import and session persistence.
@@ -256,7 +267,12 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
         _status = _pendingUpload ? AccountSyncStatus.pending : AccountSyncStatus.synced;
         notifyListeners();
       }
-      if (_pendingUpload) {
+      if (_initialized) {
+        // Guarded sync: read the box copy before any upload, so a box changed
+        // elsewhere reaches this phone on launch.
+        _activeUpload = _triggerUpload();
+        await _activeUpload;
+      } else if (_pendingUpload) {
         _scheduleUpload();
         await _activeUpload;
       }
@@ -473,6 +489,42 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
         _pendingUpload = false;
         _status = AccountSyncStatus.syncing;
         notifyListeners();
+
+        // Read the box copy first.
+        VaultContents boxContents;
+        try {
+          boxContents = await _fetchBoxContents(generation);
+        } on AccountOperationCancelled {
+          rethrow;
+        } catch (error) {
+          if (!_current(generation)) return;
+          _pendingUpload = true;
+          _status = AccountSyncStatus.error;
+          _lastError = classifyAccountError(error);
+          notifyListeners();
+          return;
+        }
+        _check(generation);
+        final boxDigest = computeSnapshotDigest(boxContents);
+
+        if (boxDigest != _lastSyncedDigest) {
+          _suppressRepositoryEvents = true;
+          try {
+            await _vault(generation).importContents(boxContents);
+            _check(generation);
+          } on AccountOperationCancelled {
+            if (_current(generation)) _suppressRepositoryEvents = false;
+            rethrow;
+          } catch (error) {
+            if (_current(generation)) _suppressRepositoryEvents = false;
+            rethrow;
+          }
+          if (_current(generation)) _suppressRepositoryEvents = false;
+          _lastSyncedDigest = boxDigest;
+          await _persist(generation);
+          _check(generation);
+        }
+
         final snapshot = await _collectStableSnapshot(generation);
         _check(generation);
         final digest = computeSnapshotDigest(snapshot);
@@ -486,7 +538,7 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
         }
         final current = await _collectStableSnapshot(generation);
         _check(generation);
-        _pendingUpload = computeSnapshotDigest(current) != digest;
+        _pendingUpload = computeSnapshotDigest(current) != (_lastSyncedDigest ?? digest);
         _status = _pendingUpload ? AccountSyncStatus.pending : AccountSyncStatus.synced;
         _lastError = null;
         notifyListeners();
@@ -508,6 +560,39 @@ class AccountSession extends ChangeNotifier with WidgetsBindingObserver {
       _uploading = false;
       // A newer sign-in may have queued work while an old generation unwound.
       if (!_current(generation) && !_disposed && _initialized && _pendingUpload) _scheduleUpload();
+    }
+  }
+
+  Future<VaultContents> _fetchBoxContents(int generation) async {
+    _check(generation);
+    final transport = _activeTransport = connect(
+      _accountBoxProfile,
+      MachineSecrets(password: _loginSecret!),
+      (_) {},
+      (_) {},
+    );
+    try {
+      _check(generation);
+      final exec = await transport.openExec('get');
+      _check(generation);
+      final lines = await exec.lines.toList();
+      _check(generation);
+      final code = await exec.exitCode;
+      _check(generation);
+      // An empty box (nothing saved yet, or its file lost) is not an error here:
+      // the upload that follows refills it from this phone.
+      if (code == 3) return const VaultContents();
+      if (code != 0) throw AccountProblem(AccountWords.reachProblem('connection failed'));
+      final contents = await openVault(lines.join('\n'), _accountKey!);
+      _check(generation);
+      return contents;
+    } finally {
+      try {
+        await transport.close();
+      } catch (_) {
+        /* Already cancelled or dropped. */
+      }
+      if (_activeTransport == transport) _activeTransport = null;
     }
   }
 

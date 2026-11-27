@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 
@@ -207,13 +208,22 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': digest,
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
 
+      final sealed = await sealVault(snapshot, testAccountKey);
+      final fakeTransport = FakeTransport();
+      fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [sealed], code: 0);
+        return FakeExecChannel.run(code: 1);
+      };
       final session = AccountSession(
         machines: repo,
         probeFingerprint: (host, port) async => 'SHA256:testpin',
-        connect: (p, s, pin, n) => FakeTransport(),
+        connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
       );
@@ -257,16 +267,22 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': oldDigest,
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
+
+      final oldFile = await sealVault(VaultContents(machines: const [macOriginal]), testAccountKey);
 
       final putChannel = FakeExecChannel();
       putChannel.onInputClosed = () => putChannel.exit(0);
 
       final fakeTransport = FakeTransport();
       fakeTransport.onExec = (cmd) async {
-        expect(cmd, equals('put'));
-        return putChannel;
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [oldFile], code: 0);
+        if (cmd == 'put') return putChannel;
+        return FakeExecChannel.run(code: 1);
       };
 
       final session = AccountSession(
@@ -282,7 +298,7 @@ void main() {
       // Local edit was NOT overwritten
       expect(repo.byId('m1')?.label, equals('Mac Edited Locally'));
       expect(session.status, equals(AccountSyncStatus.synced));
-      expect(fakeTransport.execCommands, equals(['put']));
+      expect(fakeTransport.execCommands, equals(['get', 'put']));
 
       final uploaded = await openVault(putChannel.sent.single, testAccountKey);
       expect(uploaded.machines.single.label, equals('Mac Edited Locally'));
@@ -296,8 +312,10 @@ void main() {
 
       var putsCount = 0;
       final sent = Completer<void>();
+      final emptyFile = await sealVault(const VaultContents(), testAccountKey);
       final fakeTransport = FakeTransport();
       fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [emptyFile], code: 0);
         if (cmd == 'put') {
           putsCount++;
           final ch = FakeExecChannel();
@@ -327,6 +345,9 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': 'initial-empty',
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
       await session.init();
@@ -362,9 +383,14 @@ void main() {
       final repo = await _repo([valid, draft]);
       final sessionStore = MemoryAccountSessionStore();
 
+      final emptyFile = await sealVault(const VaultContents(), testAccountKey);
       final putChannel = FakeExecChannel();
       putChannel.onInputClosed = () => putChannel.exit(0);
-      final fakeTransport = FakeTransport()..onExec = (_) async => putChannel;
+      final fakeTransport = FakeTransport();
+      fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [emptyFile], code: 0);
+        return putChannel;
+      };
 
       final session = AccountSession(
         machines: repo,
@@ -383,6 +409,9 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': 'different',
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
 
@@ -398,9 +427,20 @@ void main() {
       final repo = await _repo([m], {'m1': const MachineSecrets(password: 'pass-1')});
       final sessionStore = MemoryAccountSessionStore();
 
+      final initialFile = await sealVault(
+        VaultContents(
+          machines: const [m],
+          secrets: const {'m1': MachineSecrets(password: 'pass-1')},
+        ),
+        testAccountKey,
+      );
       final putChannel = FakeExecChannel();
       putChannel.onInputClosed = () => putChannel.exit(0);
-      final fakeTransport = FakeTransport()..onExec = (_) async => putChannel;
+      final fakeTransport = FakeTransport();
+      fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [initialFile], code: 0);
+        return putChannel;
+      };
 
       final session = AccountSession(
         machines: repo,
@@ -426,6 +466,9 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': initialDigest,
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
       await session.init();
@@ -436,7 +479,7 @@ void main() {
       await session.activeUpload;
 
       expect(session.status, equals(AccountSyncStatus.synced));
-      expect(fakeTransport.execCommands, equals(['put']));
+      expect(fakeTransport.execCommands, equals(['get', 'get', 'put']));
 
       final uploaded = await openVault(putChannel.sent.single, testAccountKey);
       expect(uploaded.secrets['m1']?.password, equals('pass-updated'));
@@ -447,10 +490,17 @@ void main() {
       final repo = await _repo([keyed]);
       final sessionStore = MemoryAccountSessionStore();
 
+      final emptyFile = await sealVault(const VaultContents(), testAccountKey);
+      final fakeTransport = FakeTransport();
+      fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [emptyFile], code: 0);
+        return FakeExecChannel.run(code: 1);
+      };
+
       final session = AccountSession(
         machines: repo,
         probeFingerprint: (host, port) async => 'SHA256:testpin',
-        connect: (p, s, pin, n) => FakeTransport(),
+        connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
         debounceDuration: Duration.zero,
       );
@@ -464,6 +514,9 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': 'different',
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
 
@@ -478,9 +531,14 @@ void main() {
       final repo = await _repo([m]);
       final sessionStore = MemoryAccountSessionStore();
 
+      final machineFile = await sealVault(VaultContents(machines: const [m]), testAccountKey);
       final putChannel = FakeExecChannel();
       putChannel.onInputClosed = () => putChannel.exit(0);
-      final fakeTransport = FakeTransport()..onExec = (_) async => putChannel;
+      final fakeTransport = FakeTransport();
+      fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [machineFile], code: 0);
+        return putChannel;
+      };
 
       final session = AccountSession(
         machines: repo,
@@ -500,6 +558,9 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': digest,
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
       await session.init();
@@ -509,7 +570,7 @@ void main() {
       await session.activeUpload;
 
       expect(session.status, equals(AccountSyncStatus.synced));
-      expect(fakeTransport.execCommands, equals(['put']));
+      expect(fakeTransport.execCommands, equals(['get', 'get', 'put']));
 
       final uploaded = await openVault(putChannel.sent.single, testAccountKey);
       expect(uploaded.machines, isEmpty);
@@ -546,6 +607,9 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': computeSnapshotDigest(const VaultContents()),
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
       await session.init();
@@ -574,8 +638,10 @@ void main() {
 
       var putsAttempted = 0;
       final sent = Completer<void>();
+      final emptyFile = await sealVault(const VaultContents(), testAccountKey);
       final fakeTransport = FakeTransport();
       fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [emptyFile], code: 0);
         if (cmd == 'put') {
           putsAttempted++;
           final ch = FakeExecChannel();
@@ -605,6 +671,9 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': computeSnapshotDigest(const VaultContents()),
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
       await session.init();
@@ -706,16 +775,25 @@ void main() {
           'accountKey': base64Encode(testAccountKey),
           'lastSyncedDigest': computeSnapshotDigest(const VaultContents()),
           'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpin',
         }),
       );
 
+      final sealed = await tester.runAsync(() => sealVault(const VaultContents(), testAccountKey));
+      final fakeTransport = FakeTransport();
+      fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [sealed!], code: 0);
+        return FakeExecChannel.run(code: 1);
+      };
       final session = AccountSession(
         machines: repo,
         probeFingerprint: (host, port) async => 'SHA256:testpin',
-        connect: (p, s, pin, n) => FakeTransport(),
+        connect: (p, s, pin, n) => fakeTransport,
         sessionStore: sessionStore,
       );
-      await session.init();
+      await tester.runAsync(() => session.init());
 
       await tester.pumpWidget(
         MultiProvider(
@@ -767,6 +845,601 @@ void main() {
 
       expect(find.text('Sign in'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('Guarded upload spec E01-E08', () {
+    test('test_E01_guarded upload fetches box before put when digest matches', () async {
+      final base = const VaultContents();
+      final digest = computeSnapshotDigest(base);
+      final repo = await _repo([]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e01',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': digest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE01AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final file = await sealVault(base, testAccountKey);
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [file], code: 0);
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE01AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      expect(session.isSignedIn, isTrue);
+      fake.execCommands.clear();
+      await repo.save(const MachineProfile(id: 'm1', label: 'M1', host: 'h1', username: 'u1', auth: SshAuth.password));
+      await session.activeUpload;
+      expect(fake.execCommands, isNotEmpty);
+      expect(fake.execCommands.first, equals('get'));
+      expect(fake.execCommands, contains('put'));
+      expect(fake.execCommands.indexOf('get'), lessThan(fake.execCommands.indexOf('put')));
+    });
+
+    test('test_E02_box change wins over stale local edit and skips put', () async {
+      const oldM = MachineProfile(
+        id: 'box1',
+        label: 'Box',
+        host: '140.245.204.23',
+        username: 'u',
+        auth: SshAuth.password,
+        hostKeyFingerprint: 'SHA256:keep-me-E02AAAAAAAAAAAAAAAAAAAAA',
+      );
+      const boxM = MachineProfile(
+        id: 'box1',
+        label: 'Box',
+        host: 'codes-and-stories.duckdns.org',
+        username: 'u',
+        auth: SshAuth.password,
+        hostKeyFingerprint: 'SHA256:keep-me-E02AAAAAAAAAAAAAAAAAAAAA',
+      );
+      final oldDigest = computeSnapshotDigest(const VaultContents(machines: [oldM]));
+      final boxDigest = computeSnapshotDigest(const VaultContents(machines: [boxM]));
+      final repo = await _repo([oldM]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e02',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': oldDigest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE02AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final oldFile = await sealVault(const VaultContents(machines: [oldM]), testAccountKey);
+      final boxFile = await sealVault(const VaultContents(machines: [boxM]), testAccountKey);
+      final fake = FakeTransport();
+      var getCall = 0;
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') {
+          getCall++;
+          if (getCall == 1) return FakeExecChannel.run(stdout: [oldFile], code: 0);
+          return FakeExecChannel.run(stdout: [boxFile], code: 0);
+        }
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE02AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      fake.execCommands.clear();
+      await repo.save(
+        const MachineProfile(
+          id: 'box1',
+          label: 'Locally edited',
+          host: '140.245.204.23',
+          username: 'u',
+          auth: SshAuth.password,
+          hostKeyFingerprint: 'SHA256:keep-me-E02AAAAAAAAAAAAAAAAAAAAA',
+        ),
+      );
+      await session.activeUpload;
+      expect(fake.execCommands, contains('get'));
+      expect(fake.execCommands, isNot(contains('put')));
+      expect(repo.byId('box1')?.host, equals('codes-and-stories.duckdns.org'));
+      expect(repo.byId('box1')?.hostKeyFingerprint, equals('SHA256:keep-me-E02AAAAAAAAAAAAAAAAAAAAA'));
+      expect(session.lastSyncedDigest, equals(boxDigest));
+    });
+
+    test('test_E03_phone-only machine survives box import and is uploaded', () async {
+      const baseOld = MachineProfile(id: 'base', label: 'Base', host: 'h-old', username: 'u', auth: SshAuth.password);
+      const baseNew = MachineProfile(
+        id: 'base',
+        label: 'Base',
+        host: 'codes-and-stories.duckdns.org',
+        username: 'u',
+        auth: SshAuth.password,
+      );
+      const phoneOnly = MachineProfile(
+        id: 'phone-only',
+        label: 'Phone',
+        host: 'h-phone',
+        username: 'u',
+        auth: SshAuth.password,
+      );
+      final oldDigest = computeSnapshotDigest(const VaultContents(machines: [baseOld]));
+      final repo = await _repo([baseOld]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e03',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': oldDigest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE03AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final boxFile = await sealVault(const VaultContents(machines: [baseNew]), testAccountKey);
+      final putChannels = <FakeExecChannel>[];
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [boxFile], code: 0);
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          putChannels.add(ch);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE03AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      fake.execCommands.clear();
+      await repo.save(phoneOnly);
+      await session.activeUpload;
+      expect(fake.execCommands.first, equals('get'));
+      expect(fake.execCommands, contains('put'));
+      expect(repo.byId('base')?.host, equals('codes-and-stories.duckdns.org'));
+      expect(repo.byId('phone-only'), isNotNull);
+      expect(putChannels, isNotEmpty);
+      final uploaded = await openVault(putChannels.last.sent.single, testAccountKey);
+      expect(uploaded.machines.map((m) => m.id).toSet(), containsAll(['base', 'phone-only']));
+      expect(uploaded.machines.firstWhere((m) => m.id == 'base').host, equals('codes-and-stories.duckdns.org'));
+    });
+
+    test('test_E04_timeout_fetch fails with no put and error shown', () async {
+      final digest = computeSnapshotDigest(const VaultContents());
+      final repo = await _repo([]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e04t',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': digest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE04TAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') throw TimeoutException('timed out');
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE04TAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      fake.execCommands.clear();
+      await repo.save(const MachineProfile(id: 'm1', label: 'M1', host: 'h1', username: 'u1', auth: SshAuth.password));
+      await session.activeUpload;
+      expect(fake.execCommands, equals(['get']));
+      expect(session.status, equals(AccountSyncStatus.error));
+      expect(session.lastError, isNotNull);
+    });
+
+    test('test_E04_exit_fetch fails with no put and error shown', () async {
+      final digest = computeSnapshotDigest(const VaultContents());
+      final repo = await _repo([]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e04e',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': digest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE04EAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(code: 1);
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE04EAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      fake.execCommands.clear();
+      await repo.save(const MachineProfile(id: 'm1', label: 'M1', host: 'h1', username: 'u1', auth: SshAuth.password));
+      await session.activeUpload;
+      expect(fake.execCommands, equals(['get']));
+      expect(session.status, equals(AccountSyncStatus.error));
+      expect(session.lastError, isNotNull);
+    });
+
+    test('test_E09_empty box (get exit 3) is refilled by the upload', () async {
+      final digest = computeSnapshotDigest(const VaultContents());
+      final repo = await _repo([]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e09',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': digest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE09AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(code: 3);
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE09AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      fake.execCommands.clear();
+      await repo.save(const MachineProfile(id: 'm1', label: 'M1', host: 'h1', username: 'u1', auth: SshAuth.password));
+      await session.activeUpload;
+      expect(fake.execCommands, equals(['get', 'put']));
+      expect(session.status, equals(AccountSyncStatus.synced));
+    });
+
+    test('test_E04_decrypt_fetch fails with no put and error shown', () async {
+      final digest = computeSnapshotDigest(const VaultContents());
+      final repo = await _repo([]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e04d',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': digest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE04DAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: ['not-an-encrypted-vault!!!'], code: 0);
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE04DAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      fake.execCommands.clear();
+      await repo.save(const MachineProfile(id: 'm1', label: 'M1', host: 'h1', username: 'u1', auth: SshAuth.password));
+      await session.activeUpload;
+      expect(fake.execCommands, equals(['get']));
+      expect(session.status, equals(AccountSyncStatus.error));
+      expect(session.lastError, isNotNull);
+    });
+
+    test('test_E05_init while signed in pulls box copy changed elsewhere', () async {
+      const oldM = MachineProfile(
+        id: 'box1',
+        label: 'Box',
+        host: '140.245.204.23',
+        username: 'u',
+        auth: SshAuth.password,
+      );
+      const boxM = MachineProfile(
+        id: 'box1',
+        label: 'Box',
+        host: 'codes-and-stories.duckdns.org',
+        username: 'u',
+        auth: SshAuth.password,
+      );
+      final oldDigest = computeSnapshotDigest(const VaultContents(machines: [oldM]));
+      final boxDigest = computeSnapshotDigest(const VaultContents(machines: [boxM]));
+      final repo = await _repo([oldM]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e05',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': oldDigest,
+          'initialized': true,
+          'address': '10.0.0.5',
+          'port': 2200,
+          'pin': 'SHA256:testpinE05AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        }),
+      );
+      final boxFile = await sealVault(const VaultContents(machines: [boxM]), testAccountKey);
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        if (cmd == 'get') return FakeExecChannel.run(stdout: [boxFile], code: 0);
+        if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE05AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => fake,
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      expect(fake.execCommands, contains('get'));
+      expect(repo.byId('box1')?.host, equals('codes-and-stories.duckdns.org'));
+      expect(session.lastSyncedDigest, equals(boxDigest));
+      expect(fake.execCommands, isNot(contains('put')));
+      expect(session.status, equals(AccountSyncStatus.synced));
+    });
+
+    test('test_E06_no built-in box address or host key in app lib', () async {
+      final hits = <String>[];
+      // Synchronous reads: the async walk timed out under full-suite load.
+      for (final entity in Directory('lib').listSync(recursive: true)) {
+        if (entity is File && entity.path.endsWith('.dart')) {
+          final text = entity.readAsStringSync();
+          if (text.contains('accountBoxHost') ||
+              text.contains('accountBoxHostKey') ||
+              text.contains('140.245.204.23') ||
+              text.contains('SHA256:JVAqsSiiRDspdJB3qXz/aBFPmiV00lIoih7NV1b5I0U')) {
+            hits.add(entity.path);
+          }
+        }
+      }
+      expect(hits, isEmpty, reason: 'retired built-in box address remains in ${hits.join(', ')}');
+      expect(accountBoxPort, equals(22));
+      expect(accountBoxUser, equals('herdrj'));
+    });
+
+    test('test_E07_missing address stays signed out and opens no connection', () async {
+      final repo = await _repo([
+        const MachineProfile(id: 'm1', label: 'M1', host: 'h1', username: 'u1', auth: SshAuth.password),
+      ]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e07',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': computeSnapshotDigest(const VaultContents()),
+          'initialized': true,
+        }),
+      );
+      var connects = 0;
+      final fake = FakeTransport();
+      fake.onExec = (cmd) async {
+        final ch = FakeExecChannel();
+        ch.onInputClosed = () => ch.exit(0);
+        return ch;
+      };
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE07AAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) {
+          connects++;
+          return fake;
+        },
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await session.init();
+      expect(session.isSignedIn, isFalse);
+      expect(session.status, equals(AccountSyncStatus.signedOut));
+      expect(connects, equals(0));
+    });
+
+    testWidgets('test_E07b_missing address screen asks to sign in', (tester) async {
+      final repo = await _repo([]);
+      final store = MemoryAccountSessionStore();
+      await store.write(
+        sessionStorageKey,
+        jsonEncode({
+          'v': 2,
+          'username': 'jaya',
+          'loginSecret': 'login-secret-e07b',
+          'accountKey': base64Encode(testAccountKey),
+          'lastSyncedDigest': computeSnapshotDigest(const VaultContents()),
+          'initialized': true,
+        }),
+      );
+      final session = AccountSession(
+        machines: repo,
+        probeFingerprint: (host, port) async => 'SHA256:testpinE07BAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        connect: (p, s, pin, n) => FakeTransport(),
+        sessionStore: store,
+        debounceDuration: Duration.zero,
+      );
+      await tester.runAsync(session.init);
+      expect(session.isSignedIn, isFalse);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<MachineRepository>.value(value: repo),
+            ChangeNotifierProvider<AccountSession>.value(value: session),
+          ],
+          child: MaterialApp(theme: AppTheme.light(), home: const AccountScreen()),
+        ),
+      );
+      expect(find.text('Sign in'), findsOneWidget);
+    });
+
+    test('test_E08_typed address probe trust import and guarded upload', () async {
+      final repo = await _repo([]);
+      final file = await sealVault(const VaultContents(), testAccountKey);
+      const probed = 'SHA256:testpinE08AAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      final profiles = <MachineProfile>[];
+      String? probedHost;
+      int? probedPort;
+      String? trustedFp;
+      final transport = FakeTransport();
+      transport.onExec = (cmd) async {
+        if (cmd == 'key') {
+          return FakeExecChannel.run(
+            stdout: [
+              jsonEncode({'v': 1, 'username': 'jaya', 'key': base64Encode(testAccountKey)}),
+            ],
+            code: 0,
+          );
+        } else if (cmd == 'get') {
+          return FakeExecChannel.run(stdout: [file], code: 0);
+        } else if (cmd == 'put') {
+          final ch = FakeExecChannel();
+          ch.onInputClosed = () => ch.exit(0);
+          return ch;
+        }
+        return FakeExecChannel.run(code: 1);
+      };
+      final session = AccountSession(
+        machines: repo,
+        connect: (p, s, pin, n) {
+          profiles.add(p);
+          return transport;
+        },
+        probeFingerprint: (host, port) async {
+          probedHost = host;
+          probedPort = port;
+          return probed;
+        },
+        sessionStore: MemoryAccountSessionStore(),
+        debounceDuration: Duration.zero,
+      );
+      await session.signIn(
+        '10.0.0.5:2200',
+        'jaya',
+        'pw-e08',
+        trustFingerprint: (fp) async {
+          trustedFp = fp;
+          return true;
+        },
+      );
+      expect(probedHost, equals('10.0.0.5'));
+      expect(probedPort, equals(2200));
+      expect(trustedFp, equals(probed));
+      expect(session.isSignedIn, isTrue);
+      for (final p in profiles) {
+        expect(p.host, equals('10.0.0.5'));
+        expect(p.port, equals(2200));
+        expect(p.hostKeyFingerprint, equals(probed));
+      }
+      profiles.clear();
+      transport.execCommands.clear();
+      await repo.save(
+        const MachineProfile(id: 'm08', label: 'M08', host: 'h08', username: 'u08', auth: SshAuth.password),
+      );
+      await session.activeUpload;
+      expect(transport.execCommands.first, equals('get'));
+      expect(transport.execCommands, contains('put'));
+      expect(profiles, isNotEmpty);
+      expect(profiles.last.host, equals('10.0.0.5'));
+      expect(profiles.last.port, equals(2200));
+      expect(profiles.last.hostKeyFingerprint, equals(probed));
     });
   });
 }

@@ -399,7 +399,7 @@ void main() {
     expect(last.hostKeyFingerprint, equals(probed));
   });
 
-  test('E11: legacy record restores signed in and next connect uses legacy box pin', () async {
+  test('E11: missing address loads signed out and opens no connection (E07)', () async {
     final repo = await makeRepo([]);
     final store = MemoryAccountSessionStore2();
     final digest = computeSnapshotDigest(const VaultContents());
@@ -414,7 +414,7 @@ void main() {
         'initialized': true,
       }),
     );
-    final profiles = <MachineProfile>[];
+    var connects = 0;
     final transport = FakeTransport();
     transport.onExec = (cmd) async {
       final ch = FakeExecChannel();
@@ -424,7 +424,7 @@ void main() {
     final session = AccountSession(
       machines: repo,
       connect: (p, s, pin, n) {
-        profiles.add(p);
+        connects++;
         return transport;
       },
       probeFingerprint: (host, port) async => 'SHA256:unused-e11-pinxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -434,21 +434,12 @@ void main() {
 
     await session.init();
 
-    expect(session.isSignedIn, isTrue);
-
-    await repo.save(
-      const MachineProfile(id: 'm11', label: 'M11', host: 'h11', username: 'u11', auth: SshAuth.password),
-    );
-    await session.activeUpload;
-
-    expect(profiles, isNotEmpty);
-    final last = profiles.last;
-    expect(last.host, equals('140.245.204.23'));
-    expect(last.port, equals(22));
-    expect(last.hostKeyFingerprint, equals('SHA256:JVAqsSiiRDspdJB3qXz/aBFPmiV00lIoih7NV1b5I0U'));
+    expect(session.isSignedIn, isFalse);
+    expect(session.status, equals(AccountSyncStatus.signedOut));
+    expect(connects, equals(0));
   });
 
-  test('E12: legacy record migrates persisted fields to legacy address port and pin', () async {
+  test('E12: missing pin loads signed out and opens no connection (E07)', () async {
     final repo = await makeRepo([]);
     final store = MemoryAccountSessionStore2();
     final digest = computeSnapshotDigest(const VaultContents());
@@ -461,8 +452,11 @@ void main() {
         'accountKey': base64Encode(testAccountKey2),
         'lastSyncedDigest': digest,
         'initialized': true,
+        'address': '10.0.0.5',
+        'port': 22,
       }),
     );
+    var connects = 0;
     final transport = FakeTransport();
     transport.onExec = (cmd) async {
       final ch = FakeExecChannel();
@@ -471,25 +465,18 @@ void main() {
     };
     final session = AccountSession(
       machines: repo,
-      connect: (p, s, pin, n) => transport,
+      connect: (p, s, pin, n) {
+        connects++;
+        return transport;
+      },
       probeFingerprint: (host, port) async => 'SHA256:unused-e12-pinxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       sessionStore: store,
       debounceDuration: Duration.zero,
     );
 
     await session.init();
-    expect(session.isSignedIn, isTrue);
-
-    await repo.save(
-      const MachineProfile(id: 'm12', label: 'M12', host: 'h12', username: 'u12', auth: SshAuth.password),
-    );
-    await session.activeUpload;
-
-    final raw = store.values[sessionStorageKey];
-    expect(raw, isNotNull);
-    final decoded = jsonDecode(raw!);
-    expect(decoded['address'], equals('140.245.204.23'));
-    expect(decoded['port'], equals(22));
-    expect(decoded['pin'], equals('SHA256:JVAqsSiiRDspdJB3qXz/aBFPmiV00lIoih7NV1b5I0U'));
+    expect(session.isSignedIn, isFalse);
+    expect(session.status, equals(AccountSyncStatus.signedOut));
+    expect(connects, equals(0));
   });
 }

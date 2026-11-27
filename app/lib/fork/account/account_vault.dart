@@ -16,26 +16,14 @@ import 'package:herdr_mobile/ui/features/machines/machine_form_view_model.dart' 
 
 import 'settings_sync.dart';
 
-const accountBoxHost = '140.245.204.23';
 const accountBoxPort = 22;
 const accountBoxUser = 'herdrj';
-const accountBoxHostKey = 'SHA256:JVAqsSiiRDspdJB3qXz/aBFPmiV00lIoih7NV1b5I0U';
 
 const canonicalUsername = 'jaya';
 
 const vaultIterations = 200000;
 const vaultMaxBytes = 1024 * 1024;
 const accountTimeout = Duration(seconds: 45);
-
-const accountBox = MachineProfile(
-  id: 'account-box',
-  label: 'Account box',
-  host: accountBoxHost,
-  port: accountBoxPort,
-  username: accountBoxUser,
-  auth: SshAuth.password,
-  hostKeyFingerprint: accountBoxHostKey,
-);
 
 String canonicalizeUsername(String username) => username.trim().toLowerCase();
 
@@ -478,7 +466,7 @@ class AccountVault {
   AccountVault({
     required this.machines,
     required this.connect,
-    this.boxProfile = accountBox,
+    this.boxProfile,
     this.settingsSync,
     this.timeout = accountTimeout,
     this.check = _allowOperation,
@@ -487,7 +475,7 @@ class AccountVault {
 
   final MachineRepository machines;
   final TransportFactory connect;
-  final MachineProfile boxProfile;
+  final MachineProfile? boxProfile;
   final SettingsSync? settingsSync;
   final Duration timeout;
   final void Function() check;
@@ -506,7 +494,17 @@ class AccountVault {
     final (contents, accountKey) = await _runWithTimeout(
       () async {
         check();
-        final transport = opened = connect(boxProfile, login, (_) {}, (_) {});
+        final profile =
+            boxProfile ??
+            const MachineProfile(
+              id: 'account-box',
+              label: 'Account box',
+              host: '',
+              port: accountBoxPort,
+              username: accountBoxUser,
+              auth: SshAuth.password,
+            );
+        final transport = opened = connect(profile, login, (_) {}, (_) {});
         try {
           final key = await fetchAccountKey(transport, check: check, expectedUsername: username);
           check();
@@ -638,7 +636,17 @@ class AccountVault {
     return await _runWithTimeout(
       () async {
         check();
-        final transport = opened = connect(boxProfile, login, (_) {}, (_) {});
+        final profile =
+            boxProfile ??
+            const MachineProfile(
+              id: 'account-box',
+              label: 'Account box',
+              host: '',
+              port: accountBoxPort,
+              username: accountBoxUser,
+              auth: SshAuth.password,
+            );
+        final transport = opened = connect(profile, login, (_) {}, (_) {});
         try {
           check();
           final exec = await transport.openExec('put');

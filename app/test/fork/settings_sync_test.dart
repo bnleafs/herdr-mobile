@@ -274,6 +274,9 @@ void main() {
         'accountKey': base64Encode(testAccountKey),
         'lastSyncedDigest': computeSnapshotDigest(const VaultContents()),
         'initialized': true,
+        'address': '10.0.0.5',
+        'port': 2200,
+        'pin': 'SHA256:testpin',
       });
 
       final machineRepo = MachineRepository(profiles: MemoryProfileStore(), secrets: MemorySecretStore());
@@ -286,6 +289,10 @@ void main() {
       final putChannels = <FakeExecChannel>[];
       final fakeTransport = FakeTransport();
       fakeTransport.onExec = (cmd) async {
+        if (cmd == 'get') {
+          final file = await sealVault(const VaultContents(), testAccountKey);
+          return FakeExecChannel.run(stdout: [file], code: 0);
+        }
         if (cmd == 'put') {
           final ch = FakeExecChannel();
           ch.onInputClosed = () {
@@ -323,7 +330,7 @@ void main() {
       await session.activeUpload;
 
       // Exactly one put was executed
-      expect(fakeTransport.execCommands, equals(['put']));
+      expect(fakeTransport.execCommands, equals(['get', 'get', 'put']));
       expect(session.status, equals(AccountSyncStatus.synced));
       expect(putChannels.length, equals(1));
       final uploaded = putChannels.first.sent.join('\n');

@@ -90,6 +90,9 @@ Future<MemoryAccountSessionStore> savedSession([String? digest]) async {
       'accountKey': base64Encode(testAccountKey),
       'lastSyncedDigest': digest ?? 'old-remote-digest',
       'initialized': true,
+      'address': '10.0.0.5',
+      'port': 2200,
+      'pin': 'SHA256:testpin',
     }),
   );
   return store;
@@ -246,7 +249,7 @@ void main() {
     session.didChangeAppLifecycleState(AppLifecycleState.resumed);
     await session.activeUpload;
     expect(session.status, AccountSyncStatus.synced);
-    expect(box.execCommands, ['key', 'get']);
+    expect(box.execCommands, ['key', 'get', 'get']);
   });
 
   for (final action in ['sign out', 'dispose', 'background']) {
@@ -262,7 +265,17 @@ void main() {
         debounceDuration: Duration.zero,
         connect: (p, s, pin, n) {
           connections++;
-          return FakeTransport();
+          final t = FakeTransport();
+          t.onExec = (cmd) async {
+            if (cmd == 'get') {
+              final file = await sealVault(const VaultContents(), testAccountKey);
+              return FakeExecChannel.run(stdout: [file], code: 0);
+            }
+            final ch = FakeExecChannel();
+            ch.onInputClosed = () => ch.exit(0);
+            return ch;
+          };
+          return t;
         },
         probeFingerprint: (host, port) async => 'SHA256:testpin',
         sealSnapshot: (contents, key) async {
@@ -276,6 +289,9 @@ void main() {
       await repo.save(remote);
       final upload = session.activeUpload;
       await entered.future;
+      // The init pull and the pre-upload get both connect before encryption starts.
+      final connectionsBeforeCancel = connections;
+      expect(connectionsBeforeCancel, 2);
       if (action == 'sign out') {
         await session.signOut();
       } else if (action == 'dispose') {
@@ -285,7 +301,8 @@ void main() {
       }
       release.complete();
       await upload;
-      expect(connections, 0);
+      // Cancelled during encryption: no connection (and so no put) afterwards.
+      expect(connections, connectionsBeforeCancel);
       expect(
         session.status,
         action == 'background'
@@ -375,7 +392,13 @@ void main() {
       secondSent.complete();
       second.exit(0);
     };
-    box.onExec = (_) async => ++puts == 1 ? first : second;
+    box.onExec = (cmd) async {
+      if (cmd == 'get') {
+        final file = await sealVault(const VaultContents(), testAccountKey);
+        return FakeExecChannel.run(stdout: [file], code: 0);
+      }
+      return ++puts == 1 ? first : second;
+    };
     final session = sessionFor(repo, store, box, debounce: const Duration(seconds: 1));
     await session.init();
     await repo.save(remote);
@@ -401,7 +424,7 @@ void main() {
     final session = sessionFor(repo, store, box);
     await session.signIn('140.245.204.23', 'jaya', 'pw', trustFingerprint: (_) async => true);
     await session.activeUpload;
-    expect(box.execCommands, ['key', 'get', 'put']);
+    expect(box.execCommands, ['key', 'get', 'get', 'put']);
     expect(session.status, AccountSyncStatus.synced);
   });
 

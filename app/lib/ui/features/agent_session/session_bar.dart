@@ -341,7 +341,6 @@ class _OptionsSheetState extends State<_OptionsSheet> {
     Navigator.of(context).pop();
   }
 
-
   /// Deletes the worktree this session runs in (held, never forced); the
   /// chat stays readable, the session loses its folder.
   void _removeWorktree() {
@@ -504,7 +503,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     Navigator.of(context).pop(true);
   }
 
-
   @override
   Widget build(BuildContext context) => SessionSelect<(List<ConfigOption>, ModeState?)>(
     session: widget.session,
@@ -544,7 +542,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       _SettingRow(title: s.name, value: s.currentName, onTap: () => setState(() => _picking = s.id)),
                 ],
               ),
-
       );
     },
   );

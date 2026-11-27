@@ -159,7 +159,6 @@ class _AgentSessionScreenState extends State<AgentSessionScreen> with WidgetsBin
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-
         _WaitsUntilLive(session: widget.session),
         Flexible(child: PromptDock(session: widget.session)),
       ],

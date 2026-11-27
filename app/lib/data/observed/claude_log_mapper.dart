@@ -332,7 +332,6 @@ class ClaudeLogMapper implements SessionLogMapper {
     final out = <SessionUpdate>[];
     // The model that wrote this message, shown as the same chip an ACP agent
     // gets. Only when it changes, and never for a subagent (it runs its own).
-    final model = m['model'];
     if (!sidechain && model is String && model.isNotEmpty && model != _model) {
       _model = model;
       out.add(

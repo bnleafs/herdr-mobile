@@ -633,7 +633,7 @@ String connectionSubtitle(AppUpdate? update) {
   final telemetry = ForkTelemetry.instance;
   if (!telemetry.isConfigured) {
     return update == null
-        ? 'Talks to herdr over SSH and sends nothing anywhere else. A page you open from a link loads from its own site, in herdr, only when you tap it. '
+        ? 'Talks to herdr over SSH. A page you open from a link loads from its own site, in herdr, only when you tap it. '
               'Dictation uses your phone’s own speech service.'
         : 'Talks to herdr over SSH. The only other places it contacts are GitHub, to look for a new version and, when you tap Download, to fetch it, and the site of a link you tap to open. '
               'Dictation uses your phone’s own speech service.';
@@ -647,11 +647,13 @@ String connectionSubtitle(AppUpdate? update) {
 
   if (update == null) {
     return 'Talks to herdr over SSH. '
+        'A page you open from a link loads from its own site, in herdr, only when you tap it. '
         '$diag'
         'Dictation uses your phone’s own speech service.';
   }
 
   return 'Talks to herdr over SSH. '
+      'A page you open from a link loads from its own site, in herdr, only when you tap it. '
       'It contacts GitHub to look for a new version and, when you tap Download, to fetch it. '
       '$diag'
       'Dictation uses your phone’s own speech service.';

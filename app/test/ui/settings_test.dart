@@ -381,7 +381,7 @@ void main() {
       ForkTelemetry.resetInstance();
       expect(
         connectionSubtitle(null),
-        'Talks to herdr over SSH and sends nothing anywhere else. A page you open from a link loads from its own site, in herdr, only when you tap it. Dictation uses your phone’s own speech service.',
+        'Talks to herdr over SSH. A page you open from a link loads from its own site, in herdr, only when you tap it. Dictation uses your phone’s own speech service.',
       );
       expect(
         connectionSubtitle(fakeUpdate),

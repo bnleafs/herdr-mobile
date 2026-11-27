@@ -381,11 +381,11 @@ void main() {
       ForkTelemetry.resetInstance();
       expect(
         connectionSubtitle(null),
-        'Talks to herdr over SSH and sends nothing anywhere else. Dictation uses your phone’s own speech service.',
+        'Talks to herdr over SSH and sends nothing anywhere else. A page you open from a link loads from its own site, in herdr, only when you tap it. Dictation uses your phone’s own speech service.',
       );
       expect(
         connectionSubtitle(fakeUpdate),
-        'Talks to herdr over SSH. The only other place it contacts is GitHub, to look for a new version and, when you tap Download, to fetch it. Dictation uses your phone’s own speech service.',
+        'Talks to herdr over SSH. The only other places it contacts are GitHub, to look for a new version and, when you tap Download, to fetch it, and the site of a link you tap to open. Dictation uses your phone’s own speech service.',
       );
 
       // Configured branch: Sentry only

@@ -372,14 +372,22 @@ class FleetRepository extends ChangeNotifier {
       return;
     }
     final a = away ?? Duration.zero;
+    final grace = backgroundSuspendAfter();
     final refresh = <MachineConnection>[];
     var reconnectCount = 0;
     for (final c in connections) {
       final id = c.profile.id;
-      if (wasSuspended.contains(id) || (a > longAway && !keeps(id))) {
+      final rebuilt = wasSuspended.contains(id) || (a > longAway && !keeps(id));
+      if (rebuilt) {
         reconnectCount++;
         c.markConnect(ConnectPath.rebuiltResume);
-        c.reconnect();
+        // Inside the grace period the socket may still answer: ask first and
+        // rebuild only if the question fails (or the absence outlasted grace).
+        if (wasSuspended.contains(id) || a > grace) {
+          c.reconnect();
+        } else {
+          refresh.add(c);
+        }
       } else {
         c.markConnect(ConnectPath.refreshedResume);
         refresh.add(c);

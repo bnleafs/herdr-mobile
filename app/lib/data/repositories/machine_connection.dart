@@ -753,7 +753,8 @@ class MachineConnection extends ChangeNotifier {
     final quietChanged = _evaluateQuiet(s, now);
     final shown = _present(s);
     final shownChanged = shown != _snapshot;
-    if (_state == LinkState.online && _pendingConnectPath == ConnectPath.refreshedResume) {
+    if (_state == LinkState.online &&
+        (_pendingConnectPath == ConnectPath.refreshedResume || _pendingConnectPath == ConnectPath.rebuiltResume)) {
       _recordLinkLive();
     }
     if (!rawChanged && !shownChanged && !quietChanged) {

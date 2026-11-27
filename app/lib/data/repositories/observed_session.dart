@@ -1514,6 +1514,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
       if (mapper case ClaudeLogMapper m) {
         final model = m.currentModel;
         if (model != null) _configAdapter?.onObservedModel(model);
+        final effort = m.currentEffort;
+        if (effort != null) _configAdapter?.onObservedEffort(effort);
       }
       return;
     }
@@ -1523,6 +1525,8 @@ class ObservedAgentSession extends ChangeNotifier implements AgentSessionView, S
     if (_mapper case ClaudeLogMapper m) {
       final model = m.currentModel;
       if (model != null) _configAdapter?.onObservedModel(model);
+      final effort = m.currentEffort;
+      if (effort != null) _configAdapter?.onObservedEffort(effort);
     }
   }
 

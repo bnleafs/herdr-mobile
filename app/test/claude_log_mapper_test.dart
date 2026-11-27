@@ -802,4 +802,45 @@ void main() {
       expect(option.currentName, 'Haiku 5.5');
     });
   });
+
+  group('terminal effort (fork)', () {
+    String effortLine(String uuid, String effort, {String model = 'claude-opus-5-5', bool sidechain = false}) =>
+        jsonEncode({
+          'type': 'assistant',
+          'uuid': uuid,
+          'isSidechain': sidechain,
+          'effort': effort,
+          'message': {
+            'id': 'm-$uuid',
+            'model': model,
+            'content': [
+              {'type': 'text', 'text': 'hi'},
+            ],
+          },
+        });
+
+    test('E01_currentEffort is set from a main-thread assistant effort', () {
+      final m = ClaudeLogMapper();
+      m.map(effortLine('e01-1', 'xhigh'));
+      expect((m as dynamic).currentEffort, 'xhigh');
+    });
+
+    test('E02_currentEffort a later main-thread effort replaces the earlier one', () {
+      final m = ClaudeLogMapper();
+      m.map(effortLine('e02-1', 'xhigh'));
+      m.map(effortLine('e02-2', 'max'));
+      expect((m as dynamic).currentEffort, 'max');
+    });
+
+    test('E03_currentEffort a subagent line does not change the effort', () {
+      final m = ClaudeLogMapper();
+      m.map(effortLine('e03-1', 'xhigh'));
+      expect((m as dynamic).currentEffort, 'xhigh');
+      m.map(effortLine('e03-2', 'max', sidechain: true));
+      expect((m as dynamic).currentEffort, 'xhigh');
+      final side = ClaudeLogMapper(sidechain: true);
+      side.map(effortLine('e03-3', 'max', sidechain: true));
+      expect((side as dynamic).currentEffort, isNull);
+    });
+  });
 }

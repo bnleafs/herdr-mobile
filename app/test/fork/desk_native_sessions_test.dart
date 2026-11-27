@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:herdr_mobile/data/acp/acp_models.dart';
 import 'package:herdr_mobile/data/acp/agent_host.dart';
 import 'package:herdr_mobile/data/observed/claude_kind.dart';
 import 'package:herdr_mobile/data/repositories/agent_screens.dart';
 import 'package:herdr_mobile/data/repositories/agent_session.dart';
 import 'package:herdr_mobile/data/repositories/machine_connection.dart';
+import 'package:herdr_mobile/data/repositories/observed_session.dart';
 import 'package:herdr_mobile/data/repositories/pane_previews.dart';
 import 'package:herdr_mobile/data/services/herdr_api.dart';
 import 'package:herdr_mobile/data/services/herdr_transport.dart';
@@ -15,6 +18,7 @@ import 'package:herdr_mobile/ui/features/create/new_agent_session_view_model.dar
 
 import '../support/create_harness.dart';
 import '../support/fake_agent_host.dart';
+import '../support/fake_fs.dart';
 import '../support/fake_log_source.dart';
 import '../support/fake_transport.dart';
 import '../support/herdr_stub.dart';
@@ -1303,6 +1307,59 @@ void main() {
       );
       expect(rig.stub.methods, ['workspace.create']);
       expect(rig.stub.methods.contains('pane.send_input'), isFalse);
+    });
+  });
+
+  group('observed terminal effort (fork)', () {
+    test('E04_observed session applies the mapper effort to the adapter Effort option', () async {
+      const logPath = '/home/u/.claude/projects/-work-proj/e04.jsonl';
+      final rig = await ObservedRig.create(status: 'idle', agent: 'claude', log: logPath);
+      addTearDown(rig.dispose);
+      rig.transport.fs = FakeFs()..addFile(logPath, '{}\n');
+      rig.transport.screen = '';
+      final session = ObservedAgentSession(
+        machine: rig.machine,
+        paneId: 'w1:p1',
+        kind: claudeKind,
+        source: rig.source,
+        mapper: claudeKind.newMapper,
+        previews: rig.previews,
+      );
+      addTearDown(session.dispose);
+      session.acquire();
+      await eventually(() => session.link == AgentLink.live, reason: 'log followed');
+
+      rig.source.push([
+        jsonEncode({
+          'type': 'assistant',
+          'uuid': 'e04-1',
+          'isSidechain': false,
+          'effort': 'xhigh',
+          'message': {
+            'id': 'm-e04-1',
+            'model': 'claude-opus-5-5',
+            'content': [
+              {'type': 'text', 'text': 'hi'},
+            ],
+          },
+        }),
+      ]);
+
+      await eventually(
+        () {
+          final efforts = [
+            for (final o in session.state.configOptions)
+              if (o is SelectConfigOption && o.id == 'thought_level') o.value,
+          ];
+          return efforts.isNotEmpty && efforts.single == 'xhigh';
+        },
+        timeout: const Duration(seconds: 2),
+        reason: 'the Effort chip shows the observed effort',
+      );
+      final effort = (session.state.configOptions.whereType<SelectConfigOption>().firstWhere(
+        (o) => o.id == 'thought_level',
+      )).value;
+      expect(effort, 'xhigh');
     });
   });
 }

@@ -98,6 +98,10 @@ class ClaudeLogMapper implements SessionLogMapper {
   String? _currentModel;
   String? get currentModel => _currentModel;
 
+  /// The effort last reported by an assistant turn (top-level `effort` field).
+  String? _currentEffort;
+  String? get currentEffort => _currentEffort;
+
   /// Background tasks by [BackgroundTask.key], in the order they started.
   final _tasks = <String, BackgroundTask>{};
   List<BackgroundTask>? _taskView;
@@ -138,6 +142,7 @@ class ClaudeLogMapper implements SessionLogMapper {
     _ask = null;
     _cwd = null;
     _lastTyped = null;
+    _currentEffort = null;
     _customTitled = false;
     _queued.clear();
     _turnEnded = false;
@@ -319,6 +324,10 @@ class ClaudeLogMapper implements SessionLogMapper {
     final model = m['model'];
     if (model is String && model != '<synthetic>' && model.isNotEmpty) {
       _currentModel = model;
+    }
+    final effort = e['effort'];
+    if (!sidechain && effort is String && effort.trim().isNotEmpty) {
+      _currentEffort = effort.trim();
     }
     if (m['model'] == '<synthetic>') {
       if (e['isApiErrorMessage'] != true) return const [];

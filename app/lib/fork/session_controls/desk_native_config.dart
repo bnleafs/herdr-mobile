@@ -8,33 +8,18 @@ import '../model_bar/model_bar_client.dart';
 /// provide dynamic Model, Effort, and Effortless config options compatible with
 /// Herdr's [SessionChipsRow] and [showSessionOptions].
 class DeskNativeConfigAdapter {
-  DeskNativeConfigAdapter({required this.machine, required this.paneId, this.modelBarClient = const ModelBarClient()}) {
-    _initDefaults();
-  }
+  DeskNativeConfigAdapter({required this.machine, required this.paneId, this.modelBarClient = const ModelBarClient()});
 
   final MachineConnection machine;
   final String paneId;
   final ModelBarClient modelBarClient;
 
-  String _activeModel = 'claude-3-7-sonnet';
-  String _activeEffort = 'high';
+  String _activeModel = '';
+  String _activeEffort = '';
   String _activeEffortless = 'auto';
 
   final List<String> _pinnedModels = [];
   bool _loaded = false;
-
-  void _initDefaults() {
-    _pinnedModels.addAll([
-      'claude-3-7-sonnet',
-      'claude-3-5-sonnet',
-      'claude-3-opus',
-      'claude-3-5-haiku',
-      'argon',
-      'flash',
-      'codex',
-      'muse',
-    ]);
-  }
 
   /// Asynchronously loads pinned models from the Mac's model bar store.
   Future<void> load() async {
@@ -46,7 +31,7 @@ class DeskNativeConfigAdapter {
         setPinnedModels(config.pinned);
       }
     } catch (_) {
-      // Retain fallback defaults if unreachable
+      // Unreachable: keep only the observed or chosen model.
     }
   }
 
@@ -58,7 +43,7 @@ class DeskNativeConfigAdapter {
       }
     }
     // Ensure active model is present in choices
-    if (!_pinnedModels.contains(_activeModel)) {
+    if (_activeModel.isNotEmpty && !_pinnedModels.contains(_activeModel)) {
       _pinnedModels.insert(0, _activeModel);
     }
   }
@@ -71,6 +56,13 @@ class DeskNativeConfigAdapter {
     if (!_pinnedModels.contains(clean)) {
       _pinnedModels.insert(0, clean);
     }
+  }
+
+  /// Called when an assistant turn in Claude's JSONL transcript specifies an effort.
+  void onObservedEffort(String effort) {
+    final clean = effort.trim();
+    if (clean.isEmpty) return;
+    _activeEffort = clean;
   }
 
   /// Synthesizes ACP [ConfigOption]s so upstream [SessionChipsRow] and
@@ -101,6 +93,7 @@ class DeskNativeConfigAdapter {
           ConfigChoice(value: 'low', name: 'Low'),
           ConfigChoice(value: 'medium', name: 'Medium'),
           ConfigChoice(value: 'high', name: 'High'),
+          ConfigChoice(value: 'xhigh', name: 'XHigh'),
           ConfigChoice(value: 'max', name: 'Max'),
         ],
       ),

@@ -38,16 +38,18 @@ void main() {
       );
     });
 
-    test('initializes with default model, effort, and effortless options', () {
+    test('initializes model, effort, and effortless options without guessed values', () {
       final adapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId);
 
       final options = adapter.options;
       expect(options.length, 3);
 
+      // Nothing observed or chosen yet: no built-in model list and no guessed model.
       final modelOpt = options.firstWhere((o) => o.id == 'model') as SelectConfigOption;
       expect(modelOpt.category, 'model');
       expect(modelOpt.name, 'Model');
-      expect(modelOpt.choices, isNotEmpty);
+      expect(modelOpt.value, isEmpty);
+      expect(modelOpt.choices, isEmpty);
 
       final effortOpt = options.firstWhere((o) => o.id == 'thought_level') as SelectConfigOption;
       expect(effortOpt.category, 'thought_level');
@@ -107,6 +109,64 @@ void main() {
       final modelOpt = adapter.options.firstWhere((o) => o.id == 'model') as SelectConfigOption;
       final choiceValues = modelOpt.choices.map((c) => c.value).toList();
       expect(choiceValues, containsAll(['minimax-m2.5', 'gpt-6-astra', 'argon']));
+    });
+
+    test('E04_onObservedEffort shows the observed effort', () {
+      final adapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId);
+
+      (adapter as dynamic).onObservedEffort('xhigh');
+
+      final effortOpt = adapter.options.firstWhere((o) => o.id == 'thought_level') as SelectConfigOption;
+      expect(effortOpt.value, 'xhigh');
+    });
+
+    test('E05_new adapter Model and Effort carry an empty value', () {
+      final adapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId);
+
+      final modelOpt = adapter.options.firstWhere((o) => o.id == 'model') as SelectConfigOption;
+      final effortOpt = adapter.options.firstWhere((o) => o.id == 'thought_level') as SelectConfigOption;
+      expect(modelOpt.value, isEmpty);
+      expect(effortOpt.value, isEmpty);
+    });
+
+    test('E06_effort choices are low medium high xhigh max in order', () {
+      final adapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId);
+
+      final effortOpt = adapter.options.firstWhere((o) => o.id == 'thought_level') as SelectConfigOption;
+      expect([for (final c in effortOpt.choices) c.value], ['low', 'medium', 'high', 'xhigh', 'max']);
+    });
+
+    test('E07_no builtin fallback models before the model bar loads', () {
+      final adapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId);
+
+      final before = adapter.options.firstWhere((o) => o.id == 'model') as SelectConfigOption;
+      expect([for (final c in before.choices) c.value], isEmpty);
+
+      adapter.onObservedModel('claude-opus-5-5');
+      final after = adapter.options.firstWhere((o) => o.id == 'model') as SelectConfigOption;
+      expect([for (final c in after.choices) c.value], ['claude-opus-5-5']);
+    });
+
+    test('E08_choosing a model sends slash-model and shows that id only', () async {
+      final adapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId);
+
+      await adapter.setConfigOption('model', 'claude-opus-5-5');
+
+      expect(transport.sentLines, contains('/model claude-opus-5-5'));
+      final modelOpt = adapter.options.firstWhere((o) => o.id == 'model') as SelectConfigOption;
+      expect(modelOpt.value, 'claude-opus-5-5');
+      expect([for (final c in modelOpt.choices) c.value], ['claude-opus-5-5']);
+    });
+
+    test('E09_choosing an effort sends slash-effort and shows that level', () async {
+      final adapter = DeskNativeConfigAdapter(machine: machine, paneId: paneId);
+
+      await adapter.setConfigOption('thought_level', 'xhigh');
+
+      expect(transport.sentLines, contains('/effort xhigh'));
+      final effortOpt = adapter.options.firstWhere((o) => o.id == 'thought_level') as SelectConfigOption;
+      expect(effortOpt.value, 'xhigh');
+      expect([for (final c in effortOpt.choices) c.value], ['low', 'medium', 'high', 'xhigh', 'max']);
     });
   });
 }

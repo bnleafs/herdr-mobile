@@ -4,6 +4,17 @@ What changed for the person using herdr mobile, newest first. Versions follow
 `0.1.x` patch releases; each section is the release notes of its GitHub
 release.
 
+## [0.1.71] - 2026-11-27
+
+### Terminal Claude shows its real model and effort
+
+In a Claude chat started from the terminal, the Model and Effort chips show
+what Claude actually used, read from its conversation file, such as
+`Opus · XHigh`. Before, they started as `Sonnet · High` whatever Claude ran.
+
+- A new chat shows no Model or Effort chip until Claude's first reply.
+- `XHigh` is now one of the effort choices.
+
 ## [0.1.70] - 2026-11-24
 
 ### Every link opens in herdr
